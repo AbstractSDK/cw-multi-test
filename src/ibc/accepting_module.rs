@@ -1,17 +1,17 @@
-use cosmwasm_std::{Binary, Empty, IbcMsg, IbcQuery};
+use cosmwasm_std::{Binary, IbcMsg};
 
-use crate::{AppResponse, FailingModule, Module};
+use crate::{AppResponse, FailingModule, Ibc, Module};
 
-pub trait Ibc: Module<ExecT = IbcMsg, QueryT = IbcQuery, SudoT = Empty> {}
+use super::{types::MockIbcQuery, IbcPacketRelayingMsg};
 
-impl Ibc for FailingModule<IbcMsg, IbcQuery, Empty> {}
+impl Ibc for FailingModule<IbcMsg, MockIbcQuery, IbcPacketRelayingMsg> {}
 
 pub struct IbcAcceptingModule;
 
 impl Module for IbcAcceptingModule {
     type ExecT = IbcMsg;
-    type QueryT = IbcQuery;
-    type SudoT = Empty;
+    type QueryT = MockIbcQuery;
+    type SudoT = IbcPacketRelayingMsg;
 
     fn execute<ExecC, QueryC>(
         &self,

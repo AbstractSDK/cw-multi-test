@@ -2,10 +2,13 @@ use std::borrow::Borrow;
 use std::fmt::Debug;
 
 use cosmwasm_std::{
-    to_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo, Coin, ContractInfo,
-    ContractInfoResponse, CustomQuery, Deps, DepsMut, Env, Event, MessageInfo, Order, Querier,
-    QuerierWrapper, Record, Reply, ReplyOn, Response, StdResult, Storage, SubMsg, SubMsgResponse,
-    SubMsgResult, TransactionInfo, WasmMsg, WasmQuery,
+    from_binary, instantiate2_address, to_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo,
+    CodeInfoResponse, Coin, ContractInfo, ContractInfoResponse, CustomQuery, Deps, DepsMut, Env,
+    Event, IbcBasicResponse, IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg,
+    IbcChannelOpenResponse, IbcPacketAckMsg, IbcPacketReceiveMsg, IbcPacketTimeoutMsg,
+    IbcReceiveResponse, MessageInfo, Order, Querier, QuerierWrapper, QueryRequest, Record, Reply,
+    ReplyOn, Response, StdResult, Storage, SubMsg, SubMsgResponse, SubMsgResult, TransactionInfo,
+    WasmMsg, WasmQuery,
 };
 
 use prost::Message;
@@ -19,6 +22,7 @@ use crate::app::{CosmosRouter, RouterQuerier};
 use crate::contracts::Contract;
 use crate::error::Error;
 use crate::executor::AppResponse;
+use crate::ibc::types::{AppIbcBasicResponse, AppIbcReceiveResponse};
 use crate::prefixed_storage::{prefixed, prefixed_read, PrefixedStorage, ReadonlyPrefixedStorage};
 use crate::transactions::transactional;
 use cosmwasm_std::testing::mock_wasmd_attr;
@@ -111,6 +115,81 @@ pub trait Wasm<ExecC, QueryC> {
         block: &BlockInfo,
         msg: Binary,
     ) -> AnyResult<AppResponse>;
+
+    // The following ibc endpoints can only be used by the ibc module.
+    // For channels
+    fn ibc_channel_open(
+        &self,
+        _api: &dyn Api,
+        _contract_addr: Addr,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcChannelOpenMsg,
+    ) -> AnyResult<IbcChannelOpenResponse> {
+        panic!("No ibc channel open implemented");
+    }
+
+    fn ibc_channel_connect(
+        &self,
+        _api: &dyn Api,
+        _contract_addr: Addr,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcChannelConnectMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        panic!("No ibc channel connect implemented");
+    }
+
+    fn ibc_channel_close(
+        &self,
+        _api: &dyn Api,
+        _contract_addr: Addr,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcChannelCloseMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        panic!("No ibc channel close implemented");
+    }
+
+    // For packet operations
+    fn ibc_packet_receive(
+        &self,
+        _api: &dyn Api,
+        _contract_addr: Addr,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcPacketReceiveMsg,
+    ) -> AnyResult<AppIbcReceiveResponse> {
+        panic!("No ibc packet receive implemented");
+    }
+
+    fn ibc_packet_acknowledge(
+        &self,
+        _api: &dyn Api,
+        _contract_addr: Addr,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcPacketAckMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        panic!("No ibc packet acknowledgement implemented");
+    }
+
+    fn ibc_packet_timeout(
+        &self,
+        _api: &dyn Api,
+        _contract_addr: Addr,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcPacketTimeoutMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        panic!("No ibc packet timeout implemented");
+    }
 }
 
 pub struct WasmKeeper<ExecC, QueryC> {
@@ -229,8 +308,136 @@ where
         let custom_event = Event::new("sudo").add_attribute(CONTRACT_ATTR, &contract);
 
         let res = self.call_sudo(contract.clone(), api, storage, router, block, msg.to_vec())?;
-        let (res, msgs) = self.build_app_response(&contract, custom_event, res);
+        let (res, msgs) = self.build_app_response(&contract, Some(custom_event), res);
         self.process_response(api, router, storage, block, contract, res, msgs)
+    }
+
+    // The following ibc endpoints can only be used by the ibc module.
+    // For channels
+    fn ibc_channel_open(
+        &self,
+        api: &dyn Api,
+        contract: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        request: IbcChannelOpenMsg,
+    ) -> AnyResult<IbcChannelOpenResponse> {
+        // For channel open, we simply return the result directly to the ibc module
+        let contract_response = self.with_storage(
+            api,
+            storage,
+            router,
+            block,
+            contract.clone(),
+            |contract, deps, env| contract.ibc_channel_open(deps, env, request),
+        )?;
+
+        Ok(contract_response)
+    }
+
+    fn ibc_channel_connect(
+        &self,
+        api: &dyn Api,
+        contract_addr: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        request: IbcChannelConnectMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        let res = Self::verify_ibc_response(self.with_storage(
+            api,
+            storage,
+            router,
+            block,
+            contract_addr.clone(),
+            |contract, deps, env| contract.ibc_channel_connect(deps, env, request),
+        )?)?;
+
+        self.process_ibc_response(api, contract_addr, storage, router, block, res)
+    }
+    fn ibc_channel_close(
+        &self,
+        api: &dyn Api,
+        contract_addr: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        request: IbcChannelCloseMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        let res = Self::verify_ibc_response(self.with_storage(
+            api,
+            storage,
+            router,
+            block,
+            contract_addr.clone(),
+            |contract, deps, env| contract.ibc_channel_close(deps, env, request),
+        )?)?;
+
+        self.process_ibc_response(api, contract_addr, storage, router, block, res)
+    }
+
+    fn ibc_packet_receive(
+        &self,
+        api: &dyn Api,
+        contract_addr: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        request: IbcPacketReceiveMsg,
+    ) -> AnyResult<AppIbcReceiveResponse> {
+        let res = Self::verify_packet_response(self.with_storage(
+            api,
+            storage,
+            router,
+            block,
+            contract_addr.clone(),
+            |contract, deps, env| contract.ibc_packet_receive(deps, env, request),
+        )?)?;
+
+        self.process_ibc_receive_response(api, contract_addr, storage, router, block, res)
+    }
+
+    fn ibc_packet_acknowledge(
+        &self,
+        api: &dyn Api,
+        contract_addr: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        request: IbcPacketAckMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        let res = Self::verify_ibc_response(self.with_storage(
+            api,
+            storage,
+            router,
+            block,
+            contract_addr.clone(),
+            |contract, deps, env| contract.ibc_packet_acknowledge(deps, env, request),
+        )?)?;
+
+        self.process_ibc_response(api, contract_addr, storage, router, block, res)
+    }
+
+    fn ibc_packet_timeout(
+        &self,
+        api: &dyn Api,
+        contract_addr: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        request: IbcPacketTimeoutMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        let res = Self::verify_ibc_response(self.with_storage(
+            api,
+            storage,
+            router,
+            block,
+            contract_addr.clone(),
+            |contract, deps, env| contract.ibc_packet_timeout(deps, env, request),
+        )?)?;
+
+        self.process_ibc_response(api, contract_addr, storage, router, block, res)
     }
 }
 
@@ -356,6 +563,42 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
 
         Ok(response)
     }
+
+    fn verify_ibc_response<T>(response: IbcBasicResponse<T>) -> AnyResult<IbcBasicResponse<T>>
+    where
+        T: Clone + std::fmt::Debug + PartialEq + JsonSchema,
+    {
+        Self::verify_attributes(&response.attributes)?;
+
+        for event in &response.events {
+            Self::verify_attributes(&event.attributes)?;
+            let ty = event.ty.trim();
+            if ty.len() < 2 {
+                bail!(Error::event_type_too_short(ty));
+            }
+        }
+
+        Ok(response)
+    }
+
+    fn verify_packet_response<T>(
+        response: IbcReceiveResponse<T>,
+    ) -> AnyResult<IbcReceiveResponse<T>>
+    where
+        T: Clone + std::fmt::Debug + PartialEq + JsonSchema,
+    {
+        Self::verify_attributes(&response.attributes)?;
+
+        for event in &response.events {
+            Self::verify_attributes(&event.attributes)?;
+            let ty = event.ty.trim();
+            if ty.len() < 2 {
+                bail!(Error::event_type_too_short(ty));
+            }
+        }
+
+        Ok(response)
+    }
 }
 
 impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC>
@@ -453,6 +696,60 @@ where
         })
     }
 
+    fn do_instantiate(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        sender: Addr,
+        contract_addr: Addr,
+        code_id: u64,
+        instantiate_msg: Binary,
+        funds: Vec<Coin>,
+    ) -> AnyResult<AppResponse> {
+        // move the cash
+        self.send(
+            api,
+            storage,
+            router,
+            block,
+            sender.clone(),
+            contract_addr.clone().into(),
+            &funds,
+        )?;
+
+        // then call the contract
+        let info = MessageInfo { sender, funds };
+        let res = self.call_instantiate(
+            contract_addr.clone(),
+            api,
+            storage,
+            router,
+            block,
+            info,
+            instantiate_msg.to_vec(),
+        )?;
+
+        let custom_event = Event::new("instantiate")
+            .add_attribute(CONTRACT_ATTR, &contract_addr)
+            .add_attribute("code_id", code_id.to_string());
+
+        let (res, msgs) = self.build_app_response(&contract_addr, Some(custom_event), res);
+        let mut res = self.process_response(
+            api,
+            router,
+            storage,
+            block,
+            contract_addr.clone(),
+            res,
+            msgs,
+        )?;
+        res.data = Some(instantiate_response(res.data, &contract_addr));
+
+        Ok(res)
+    }
+
     // this returns the contract address as well, so we can properly resend the data
     fn execute_wasm(
         &self,
@@ -496,7 +793,7 @@ where
                 let custom_event =
                     Event::new("execute").add_attribute(CONTRACT_ATTR, &contract_addr);
 
-                let (res, msgs) = self.build_app_response(&contract_addr, custom_event, res);
+                let (res, msgs) = self.build_app_response(&contract_addr, Some(custom_event), res);
                 let mut res =
                     self.process_response(api, router, storage, block, contract_addr, res, msgs)?;
                 res.data = execute_response(res.data);
@@ -514,53 +811,29 @@ where
                 }
 
                 let contract_addr = self.register_contract(
+                    api,
                     storage,
+                    router,
+                    block,
                     code_id,
                     sender.clone(),
                     admin.map(Addr::unchecked),
                     label,
                     block.height,
+                    None,
                 )?;
 
-                // move the cash
-                self.send(
+                self.do_instantiate(
                     api,
                     storage,
                     router,
                     block,
-                    sender.clone(),
-                    contract_addr.clone().into(),
-                    &funds,
-                )?;
-
-                // then call the contract
-                let info = MessageInfo { sender, funds };
-                let res = self.call_instantiate(
-                    contract_addr.clone(),
-                    api,
-                    storage,
-                    router,
-                    block,
-                    info,
-                    msg.to_vec(),
-                )?;
-
-                let custom_event = Event::new("instantiate")
-                    .add_attribute(CONTRACT_ATTR, &contract_addr)
-                    .add_attribute("code_id", code_id.to_string());
-
-                let (res, msgs) = self.build_app_response(&contract_addr, custom_event, res);
-                let mut res = self.process_response(
-                    api,
-                    router,
-                    storage,
-                    block,
-                    contract_addr.clone(),
-                    res,
-                    msgs,
-                )?;
-                res.data = Some(instantiate_response(res.data, &contract_addr));
-                Ok(res)
+                    sender,
+                    contract_addr,
+                    code_id,
+                    msg,
+                    funds,
+                )
             }
             WasmMsg::Migrate {
                 contract_addr,
@@ -593,7 +866,7 @@ where
                 let custom_event = Event::new("migrate")
                     .add_attribute(CONTRACT_ATTR, &contract_addr)
                     .add_attribute("code_id", new_code_id.to_string());
-                let (res, msgs) = self.build_app_response(&contract_addr, custom_event, res);
+                let (res, msgs) = self.build_app_response(&contract_addr, Some(custom_event), res);
                 let mut res =
                     self.process_response(api, router, storage, block, contract_addr, res, msgs)?;
                 res.data = execute_response(res.data);
@@ -605,6 +878,40 @@ where
             } => self.update_admin(api, storage, sender, &contract_addr, Some(admin)),
             WasmMsg::ClearAdmin { contract_addr } => {
                 self.update_admin(api, storage, sender, &contract_addr, None)
+            }
+            WasmMsg::Instantiate2 {
+                admin,
+                code_id,
+                label,
+                msg,
+                funds,
+                salt,
+            } => {
+                let contract_addr = self.register_contract(
+                    api,
+                    storage,
+                    router,
+                    block,
+                    code_id,
+                    sender.clone(),
+                    admin.map(Addr::unchecked),
+                    label,
+                    block.height,
+                    Some(salt),
+                )?;
+
+                // then we instantiate a contract as per usual
+                self.do_instantiate(
+                    api,
+                    storage,
+                    router,
+                    block,
+                    sender,
+                    contract_addr,
+                    code_id,
+                    msg,
+                    funds,
+                )
             }
             msg => bail!(Error::UnsupportedWasmMsg(msg)),
         }
@@ -693,7 +1000,7 @@ where
             .add_attribute("mode", ok_attr);
 
         let res = self.call_reply(contract.clone(), api, storage, router, block, reply)?;
-        let (res, msgs) = self.build_app_response(&contract, custom_event, res);
+        let (res, msgs) = self.build_app_response(&contract, Some(custom_event), res);
         self.process_response(api, router, storage, block, contract, res, msgs)
     }
 
@@ -702,7 +1009,7 @@ where
     fn build_app_response(
         &self,
         contract: &Addr,
-        custom_event: Event, // entry-point specific custom event added by x/wasm
+        custom_event: Option<Event>, // entry-point specific custom event added by x/wasm
         response: Response<ExecC>,
     ) -> (AppResponse, Vec<SubMsg<ExecC>>) {
         let Response {
@@ -715,7 +1022,9 @@ where
 
         // always add custom event
         let mut app_events = Vec::with_capacity(2 + events.len());
-        app_events.push(custom_event);
+        if let Some(custom_event) = custom_event {
+            app_events.push(custom_event);
+        }
 
         // we only emit the `wasm` event if some attributes are specified
         if !attributes.is_empty() {
@@ -766,23 +1075,105 @@ where
         Ok(AppResponse { events, data })
     }
 
+    fn process_ibc_response(
+        &self,
+        api: &dyn Api,
+        contract: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        res: IbcBasicResponse<ExecC>,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        // We format the events correctly because we are executing wasm
+        let contract_response = Response::new()
+            .add_submessages(res.messages)
+            .add_attributes(res.attributes)
+            .add_events(res.events);
+
+        let (res, msgs) = self.build_app_response(&contract, None, contract_response);
+
+        // We process eventual messages that were sent out with the response
+        let res = self.process_response(api, router, storage, block, contract, res, msgs)?;
+
+        // We transfer back to an IbcBasicResponse
+        Ok(AppIbcBasicResponse { events: res.events })
+    }
+
+    fn process_ibc_receive_response(
+        &self,
+        api: &dyn Api,
+        contract: Addr,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        original_res: IbcReceiveResponse<ExecC>,
+    ) -> AnyResult<AppIbcReceiveResponse> {
+        // We format the events correctly because we are executing wasm
+        let contract_response = Response::new()
+            .add_submessages(original_res.messages)
+            .add_attributes(original_res.attributes)
+            .add_events(original_res.events);
+
+        let (res, msgs) = self.build_app_response(&contract, None, contract_response);
+
+        // We process eventual messages that were sent out with the response
+        let res = self.process_response(api, router, storage, block, contract, res, msgs)?;
+
+        // If the data field was overwritten by the response propagation, we replace the ibc ack
+        let ack = if let Some(new_ack) = res.data {
+            new_ack
+        } else {
+            original_res.acknowledgement
+        };
+
+        // We transfer back to an IbcBasicResponse
+        Ok(AppIbcReceiveResponse {
+            events: res.events,
+            acknowledgement: ack,
+        })
+    }
+
     /// This just creates an address and empty storage instance, returning the new address
     /// You must call init after this to set up the contract properly.
     /// These are separated into two steps to have cleaner return values.
+    #[allow(clippy::too_many_arguments)]
     pub fn register_contract(
         &self,
+        api: &dyn Api,
         storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
         code_id: u64,
         creator: Addr,
         admin: impl Into<Option<Addr>>,
         label: String,
         created: u64,
+        instantiate2: Option<Binary>,
     ) -> AnyResult<Addr> {
         if code_id as usize > self.code_data.len() {
             bail!("Cannot init contract with unregistered code id");
         }
 
-        let addr = self.generator.next_address(storage);
+        // If using instantiate2, we generate a new address using the method
+        let addr = if let Some(salt) = instantiate2 {
+            // First we get the checksum of the code_id
+            let code_info: CodeInfoResponse = from_binary(&router.query(
+                api,
+                storage,
+                block,
+                QueryRequest::Wasm(WasmQuery::CodeInfo { code_id }),
+            )?)?;
+
+            // Then we get the new address
+            let contract = api.addr_canonicalize(creator.as_str())?;
+            api.addr_humanize(&instantiate2_address(
+                &code_info.checksum,
+                &contract,
+                &salt,
+            )?)?
+        } else {
+            self.generator.next_address(storage)
+        };
 
         let info = ContractData {
             code_id,
@@ -1017,12 +1408,13 @@ fn execute_response(data: Option<Binary>) -> Option<Binary> {
 mod test {
     use cosmwasm_std::testing::{mock_env, mock_info, MockApi, MockQuerier, MockStorage};
     use cosmwasm_std::{
-        coin, from_slice, to_vec, BankMsg, Coin, CosmosMsg, Empty, GovMsg, IbcMsg, IbcQuery,
-        StdError,
+        coin, from_slice, to_vec, BankMsg, Coin, CosmosMsg, Empty, GovMsg, IbcMsg, StdError,
     };
 
     use crate::app::Router;
     use crate::bank::BankKeeper;
+    use crate::ibc::types::MockIbcQuery;
+    use crate::ibc::IbcPacketRelayingMsg;
     use crate::module::FailingModule;
     use crate::staking::{DistributionKeeper, StakeKeeper};
     use crate::test_helpers::contracts::{caller, error, payout};
@@ -1037,7 +1429,7 @@ mod test {
         WasmKeeper<ExecC, QueryC>,
         StakeKeeper,
         DistributionKeeper,
-        FailingModule<IbcMsg, IbcQuery, Empty>,
+        FailingModule<IbcMsg, MockIbcQuery, IbcPacketRelayingMsg>,
         FailingModule<GovMsg, Empty, Empty>,
     >;
 
@@ -1068,12 +1460,16 @@ mod test {
         transactional(&mut wasm_storage, |cache, _| {
             // cannot register contract with unregistered codeId
             wasm_keeper.register_contract(
+                &api,
                 cache,
+                &mock_router(),
+                &block,
                 code_id + 1,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
         })
         .unwrap_err();
@@ -1081,12 +1477,16 @@ mod test {
         let contract_addr = transactional(&mut wasm_storage, |cache, _| {
             // we can register a new instance of this code
             wasm_keeper.register_contract(
+                &api,
                 cache,
+                &mock_router(),
+                &block,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
         })
         .unwrap();
@@ -1164,12 +1564,16 @@ mod test {
 
         let contract_addr = wasm_keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
+                &mock_router(),
+                &block,
                 code_id,
                 Addr::unchecked(creator),
                 Addr::unchecked(admin),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1267,12 +1671,16 @@ mod test {
 
         let contract_addr = wasm_keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
+                &mock_router(),
+                &block,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1319,12 +1727,16 @@ mod test {
 
         let contract_addr = wasm_keeper
             .register_contract(
+                &api,
                 &mut cache,
+                &mock_router(),
+                &block,
                 code_id,
                 Addr::unchecked("foobar"),
                 None,
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1433,12 +1845,16 @@ mod test {
         let contract1 = transactional(&mut wasm_storage, |cache, _| {
             let contract = wasm_keeper
                 .register_contract(
+                    &api,
                     cache,
+                    &mock_router(),
+                    &block,
                     code_id,
                     Addr::unchecked("foobar"),
                     None,
                     "".to_string(),
                     1000,
+                    None,
                 )
                 .unwrap();
             let info = mock_info("foobar", &[]);
@@ -1472,12 +1888,16 @@ mod test {
             // create contract 2 and use it
             let contract2 = wasm_keeper
                 .register_contract(
+                    &api,
                     cache,
+                    &mock_router(),
+                    &block,
                     code_id,
                     Addr::unchecked("foobar"),
                     None,
                     "".to_owned(),
                     1000,
+                    None,
                 )
                 .unwrap();
             let info = mock_info("foobar", &[]);
@@ -1506,12 +1926,16 @@ mod test {
                 // create a contract on level 2
                 let contract3 = wasm_keeper
                     .register_contract(
+                        &api,
                         cache2,
+                        &mock_router(),
+                        &block,
                         code_id,
                         Addr::unchecked("foobar"),
                         None,
                         "".to_owned(),
                         1000,
+                        None,
                     )
                     .unwrap();
                 let info = mock_info("johnny", &[]);
@@ -1597,12 +2021,16 @@ mod test {
 
         let contract_addr = wasm_keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
+                &mock_router(),
+                &block,
                 code_id,
                 Addr::unchecked("creator"),
                 admin.clone(),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1697,6 +2125,8 @@ mod test {
 
     #[test]
     fn by_default_uses_simple_address_generator() {
+        let api = MockApi::default();
+        let block = mock_env().block;
         let mut wasm_keeper = wasm_keeper();
         let code_id = wasm_keeper.store_code(Addr::unchecked("creator"), payout::contract());
 
@@ -1704,12 +2134,16 @@ mod test {
 
         let contract_addr = wasm_keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
+                &mock_router(),
+                &block,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 
@@ -1735,18 +2169,24 @@ mod test {
             WasmKeeper::new_with_custom_address_generator(TestAddressGenerator {
                 addr_to_return: expected_addr.clone(),
             });
+        let api = MockApi::default();
+        let block = mock_env().block;
         let code_id = wasm_keeper.store_code(Addr::unchecked("creator"), payout::contract());
 
         let mut wasm_storage = MockStorage::new();
 
         let contract_addr = wasm_keeper
             .register_contract(
+                &api,
                 &mut wasm_storage,
+                &mock_router(),
+                &block,
                 code_id,
                 Addr::unchecked("foobar"),
                 Addr::unchecked("admin"),
                 "label".to_owned(),
                 1000,
+                None,
             )
             .unwrap();
 

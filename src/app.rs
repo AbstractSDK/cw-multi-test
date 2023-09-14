@@ -3,11 +3,11 @@ use std::marker::PhantomData;
 
 use anyhow::bail;
 use anyhow::Result as AnyResult;
-use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
+use cosmwasm_std::testing::{mock_env, MockStorage};
 use cosmwasm_std::{
     from_slice, to_binary, Addr, Api, Binary, BlockInfo, ContractResult, CosmosMsg, CustomQuery,
-    Empty, GovMsg, IbcMsg, IbcQuery, Querier, QuerierResult, QuerierWrapper, QueryRequest, Record,
-    Storage, SystemError, SystemResult,
+    Empty, GovMsg, Querier, QuerierResult, QuerierWrapper, QueryRequest, Record, Storage,
+    SystemError, SystemResult,
 };
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -17,7 +17,10 @@ use crate::bank::{Bank, BankKeeper, BankSudo};
 use crate::contracts::Contract;
 use crate::executor::{AppResponse, Executor};
 use crate::gov::Gov;
-use crate::ibc::Ibc;
+use crate::ibc::api::MockSimpleApi;
+use crate::ibc::types::MockIbcQuery;
+use crate::ibc::IbcSimpleModule;
+use crate::ibc::{types::IbcResponse, Ibc, IbcModuleMsg, IbcPacketRelayingMsg as IbcSudo};
 use crate::module::{FailingModule, Module};
 use crate::staking::{Distribution, DistributionKeeper, StakeKeeper, Staking, StakingSudo};
 use crate::transactions::transactional;
@@ -31,13 +34,13 @@ pub fn next_block(block: &mut BlockInfo) {
 /// Type alias for default build `App` to make its storing simpler in typical scenario
 pub type BasicApp<ExecC = Empty, QueryC = Empty> = App<
     BankKeeper,
-    MockApi,
+    MockSimpleApi,
     MockStorage,
     FailingModule<ExecC, QueryC, Empty>,
     WasmKeeper<ExecC, QueryC>,
     StakeKeeper,
     DistributionKeeper,
-    FailingModule<IbcMsg, IbcQuery, Empty>,
+    IbcSimpleModule,
 >;
 
 /// Router is a persisted state. You can query this.
@@ -45,13 +48,13 @@ pub type BasicApp<ExecC = Empty, QueryC = Empty> = App<
 /// We offer .execute() as a wrapper around cache, execute, commit/rollback process.
 pub struct App<
     Bank = BankKeeper,
-    Api = MockApi,
+    Api = MockSimpleApi,
     Storage = MockStorage,
     Custom = FailingModule<Empty, Empty, Empty>,
     Wasm = WasmKeeper<Empty, Empty>,
     Staking = StakeKeeper,
     Distr = DistributionKeeper,
-    Ibc = FailingModule<IbcMsg, IbcQuery, Empty>,
+    Ibc = IbcSimpleModule,
     Gov = FailingModule<GovMsg, Empty, Empty>,
 > {
     router: Router<Bank, Custom, Wasm, Staking, Distr, Ibc, Gov>,
@@ -84,7 +87,7 @@ impl BasicApp {
                 WasmKeeper<Empty, Empty>,
                 StakeKeeper,
                 DistributionKeeper,
-                FailingModule<IbcMsg, IbcQuery, Empty>,
+                IbcSimpleModule,
                 FailingModule<GovMsg, Empty, Empty>,
             >,
             &dyn Api,
@@ -108,7 +111,7 @@ where
             WasmKeeper<ExecC, QueryC>,
             StakeKeeper,
             DistributionKeeper,
-            FailingModule<IbcMsg, IbcQuery, Empty>,
+            IbcSimpleModule,
             FailingModule<GovMsg, Empty, Empty>,
         >,
         &dyn Api,
@@ -166,13 +169,13 @@ where
 ///   let mut app = BasicAppBuilder::<E, Q>::new_custom().with_custom(handler).build();
 pub type BasicAppBuilder<ExecC, QueryC> = AppBuilder<
     BankKeeper,
-    MockApi,
+    MockSimpleApi,
     MockStorage,
     FailingModule<ExecC, QueryC, Empty>,
     WasmKeeper<ExecC, QueryC>,
     StakeKeeper,
     DistributionKeeper,
-    FailingModule<IbcMsg, IbcQuery, Empty>,
+    IbcSimpleModule,
     FailingModule<GovMsg, Empty, Empty>,
 >;
 
@@ -193,13 +196,13 @@ pub struct AppBuilder<Bank, Api, Storage, Custom, Wasm, Staking, Distr, Ibc, Gov
 impl Default
     for AppBuilder<
         BankKeeper,
-        MockApi,
+        MockSimpleApi,
         MockStorage,
         FailingModule<Empty, Empty, Empty>,
         WasmKeeper<Empty, Empty>,
         StakeKeeper,
         DistributionKeeper,
-        FailingModule<IbcMsg, IbcQuery, Empty>,
+        IbcSimpleModule,
         FailingModule<GovMsg, Empty, Empty>,
     >
 {
@@ -211,20 +214,20 @@ impl Default
 impl
     AppBuilder<
         BankKeeper,
-        MockApi,
+        MockSimpleApi,
         MockStorage,
         FailingModule<Empty, Empty, Empty>,
         WasmKeeper<Empty, Empty>,
         StakeKeeper,
         DistributionKeeper,
-        FailingModule<IbcMsg, IbcQuery, Empty>,
+        IbcSimpleModule,
         FailingModule<GovMsg, Empty, Empty>,
     >
 {
     /// Creates builder with default components working with empty exec and query messages.
     pub fn new() -> Self {
         AppBuilder {
-            api: MockApi::default(),
+            api: MockSimpleApi::default(),
             block: mock_env().block,
             storage: MockStorage::new(),
             bank: BankKeeper::new(),
@@ -232,7 +235,7 @@ impl
             custom: FailingModule::new(),
             staking: StakeKeeper::new(),
             distribution: DistributionKeeper::new(),
-            ibc: FailingModule::new(),
+            ibc: IbcSimpleModule,
             gov: FailingModule::new(),
         }
     }
@@ -241,13 +244,13 @@ impl
 impl<ExecC, QueryC>
     AppBuilder<
         BankKeeper,
-        MockApi,
+        MockSimpleApi,
         MockStorage,
         FailingModule<ExecC, QueryC, Empty>,
         WasmKeeper<ExecC, QueryC>,
         StakeKeeper,
         DistributionKeeper,
-        FailingModule<IbcMsg, IbcQuery, Empty>,
+        IbcSimpleModule,
         FailingModule<GovMsg, Empty, Empty>,
     >
 where
@@ -258,7 +261,7 @@ where
     /// messages.
     pub fn new_custom() -> Self {
         AppBuilder {
-            api: MockApi::default(),
+            api: MockSimpleApi::default(),
             block: mock_env().block,
             storage: MockStorage::new(),
             bank: BankKeeper::new(),
@@ -266,7 +269,7 @@ where
             custom: FailingModule::new(),
             staking: StakeKeeper::new(),
             distribution: DistributionKeeper::new(),
-            ibc: FailingModule::new(),
+            ibc: IbcSimpleModule,
             gov: FailingModule::new(),
         }
     }
@@ -880,6 +883,20 @@ where
         })
     }
 
+    /// Queries the IBC module
+    pub fn ibc_query(&self, query: MockIbcQuery) -> AnyResult<Binary> {
+        let Self {
+            block,
+            router,
+            api,
+            storage,
+        } = self;
+
+        let querier = router.querier(api, storage, block);
+
+        router.ibc.query(api, storage, &querier, block, query)
+    }
+
     /// Runs arbitrary SudoMsg.
     /// This will create a cache before the execution, so no state changes are persisted if this
     /// returns an error, but all are persisted on success.
@@ -948,6 +965,7 @@ pub enum SudoMsg {
     Custom(Empty),
     Staking(StakingSudo),
     Wasm(WasmSudo),
+    Ibc(IbcSudo),
 }
 
 impl From<WasmSudo> for SudoMsg {
@@ -966,6 +984,19 @@ impl From<StakingSudo> for SudoMsg {
     fn from(staking: StakingSudo) -> Self {
         SudoMsg::Staking(staking)
     }
+}
+
+/// We use it to allow calling into modules from the ibc module. This is used for receiving packets
+pub struct IbcRouterMsg {
+    pub module: IbcModule,
+    pub msg: IbcModuleMsg,
+}
+
+#[cosmwasm_schema::cw_serde]
+pub enum IbcModule {
+    Wasm(Addr), // The wasm module needs to contain the wasm contract address (usually decoded from the port)
+    Bank,
+    Staking,
 }
 
 pub trait CosmosRouter {
@@ -996,6 +1027,14 @@ pub trait CosmosRouter {
         block: &BlockInfo,
         msg: SudoMsg,
     ) -> AnyResult<AppResponse>;
+
+    fn ibc(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        block: &BlockInfo,
+        msg: IbcRouterMsg,
+    ) -> AnyResult<IbcResponse>;
 }
 
 impl<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> CosmosRouter
@@ -1052,7 +1091,7 @@ where
             QueryRequest::Bank(req) => self.bank.query(api, storage, &querier, block, req),
             QueryRequest::Custom(req) => self.custom.query(api, storage, &querier, block, req),
             QueryRequest::Staking(req) => self.staking.query(api, storage, &querier, block, req),
-            QueryRequest::Ibc(req) => self.ibc.query(api, storage, &querier, block, req),
+            QueryRequest::Ibc(req) => self.ibc.query(api, storage, &querier, block, req.into()),
             _ => unimplemented!(),
         }
     }
@@ -1072,6 +1111,96 @@ where
             SudoMsg::Bank(msg) => self.bank.sudo(api, storage, self, block, msg),
             SudoMsg::Staking(msg) => self.staking.sudo(api, storage, self, block, msg),
             SudoMsg::Custom(_) => unimplemented!(),
+            SudoMsg::Ibc(msg) => self.ibc.sudo(api, storage, self, block, msg),
+        }
+    }
+
+    fn ibc(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        block: &BlockInfo,
+        msg: IbcRouterMsg,
+    ) -> AnyResult<IbcResponse> {
+        match msg.module {
+            IbcModule::Bank => match msg.msg {
+                IbcModuleMsg::ChannelOpen(m) => self
+                    .bank
+                    .ibc_channel_open(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::ChannelConnect(m) => self
+                    .bank
+                    .ibc_channel_connect(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::ChannelClose(m) => self
+                    .bank
+                    .ibc_channel_close(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketReceive(m) => self
+                    .bank
+                    .ibc_packet_receive(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketAcknowledgement(m) => self
+                    .bank
+                    .ibc_packet_acknowledge(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketTimeout(m) => self
+                    .bank
+                    .ibc_packet_timeout(api, storage, self, block, m)
+                    .map(Into::into),
+            },
+            IbcModule::Staking => match msg.msg {
+                IbcModuleMsg::ChannelOpen(m) => self
+                    .staking
+                    .ibc_channel_open(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::ChannelConnect(m) => self
+                    .staking
+                    .ibc_channel_connect(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::ChannelClose(m) => self
+                    .staking
+                    .ibc_channel_close(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketReceive(m) => self
+                    .staking
+                    .ibc_packet_receive(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketAcknowledgement(m) => self
+                    .staking
+                    .ibc_packet_acknowledge(api, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketTimeout(m) => self
+                    .staking
+                    .ibc_packet_timeout(api, storage, self, block, m)
+                    .map(Into::into),
+            },
+            IbcModule::Wasm(contract_addr) => match msg.msg {
+                IbcModuleMsg::ChannelOpen(m) => self
+                    .wasm
+                    .ibc_channel_open(api, contract_addr, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::ChannelConnect(m) => self
+                    .wasm
+                    .ibc_channel_connect(api, contract_addr, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::ChannelClose(m) => self
+                    .wasm
+                    .ibc_channel_close(api, contract_addr, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketReceive(m) => self
+                    .wasm
+                    .ibc_packet_receive(api, contract_addr, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketAcknowledgement(m) => self
+                    .wasm
+                    .ibc_packet_acknowledge(api, contract_addr, storage, self, block, m)
+                    .map(Into::into),
+                IbcModuleMsg::PacketTimeout(m) => self
+                    .wasm
+                    .ibc_packet_timeout(api, contract_addr, storage, self, block, m)
+                    .map(Into::into),
+            },
         }
     }
 }
@@ -1129,6 +1258,16 @@ where
         _msg: SudoMsg,
     ) -> AnyResult<AppResponse> {
         panic!("Cannot sudo MockRouters");
+    }
+
+    fn ibc(
+        &self,
+        _api: &dyn Api,
+        _storage: &mut dyn Storage,
+        _block: &BlockInfo,
+        _msg: IbcRouterMsg,
+    ) -> AnyResult<IbcResponse> {
+        panic!("Cannot ibc MockRouters");
     }
 }
 
@@ -2852,7 +2991,7 @@ mod test {
 
         #[test]
         fn triggering_custom_msg() {
-            let api = MockApi::default();
+            let api = MockSimpleApi::default();
             let sender = api.addr_validate("sender").unwrap();
             let owner = api.addr_validate("owner").unwrap();
 

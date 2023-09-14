@@ -8,6 +8,7 @@ impl Gov for FailingModule<GovMsg, Empty, Empty> {}
 
 #[cfg(test)]
 mod test {
+    use anyhow::bail;
     use cosmwasm_std::{Addr, Binary, Empty, GovMsg};
 
     use crate::test_helpers::contracts::stargate;

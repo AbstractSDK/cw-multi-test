@@ -1,9 +1,14 @@
 use std::marker::PhantomData;
 
 use anyhow::{bail, Result as AnyResult};
-use cosmwasm_std::{Addr, Api, Binary, BlockInfo, CustomQuery, Querier, Storage};
+use cosmwasm_std::{
+    Addr, Api, Binary, BlockInfo, CustomQuery, IbcChannelCloseMsg, IbcChannelConnectMsg,
+    IbcChannelOpenMsg, IbcChannelOpenResponse, IbcPacketAckMsg, IbcPacketReceiveMsg,
+    IbcPacketTimeoutMsg, Querier, Storage,
+};
 
 use crate::app::CosmosRouter;
+use crate::ibc::types::{AppIbcBasicResponse, AppIbcReceiveResponse};
 use crate::AppResponse;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -53,6 +58,75 @@ pub trait Module {
         block: &BlockInfo,
         request: Self::QueryT,
     ) -> AnyResult<Binary>;
+
+    // The following ibc endpoints can only be used by the ibc module.
+    // For channels
+    fn ibc_channel_open<ExecC, QueryC>(
+        &self,
+        _api: &dyn Api,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcChannelOpenMsg,
+    ) -> AnyResult<IbcChannelOpenResponse> {
+        Ok(IbcChannelOpenResponse::None)
+    }
+
+    fn ibc_channel_connect<ExecC, QueryC>(
+        &self,
+        _api: &dyn Api,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcChannelConnectMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        Ok(AppIbcBasicResponse::default())
+    }
+
+    fn ibc_channel_close<ExecC, QueryC>(
+        &self,
+        _api: &dyn Api,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcChannelCloseMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        Ok(AppIbcBasicResponse::default())
+    }
+
+    // For packet operations
+    fn ibc_packet_receive<ExecC, QueryC>(
+        &self,
+        _api: &dyn Api,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcPacketReceiveMsg,
+    ) -> AnyResult<AppIbcReceiveResponse> {
+        panic!("No ibc packet receive implemented");
+    }
+
+    fn ibc_packet_acknowledge<ExecC, QueryC>(
+        &self,
+        _api: &dyn Api,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcPacketAckMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        panic!("No ibc packet acknowledgement implemented");
+    }
+
+    fn ibc_packet_timeout<ExecC, QueryC>(
+        &self,
+        _api: &dyn Api,
+        _storage: &mut dyn Storage,
+        _router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        _block: &BlockInfo,
+        _request: IbcPacketTimeoutMsg,
+    ) -> AnyResult<AppIbcBasicResponse> {
+        panic!("No ibc packet timeout implemented");
+    }
 }
 
 pub struct FailingModule<ExecT, QueryT, SudoT>(PhantomData<(ExecT, QueryT, SudoT)>);
