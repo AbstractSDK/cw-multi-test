@@ -42,15 +42,15 @@ log = "0.4.20"
 cw20-ics20 = "1.1.0"
 hex = "0.4.3"
 serde_json = "1.0.40"
-polytone-note = {version="1.0.0" }
-polytone-voice = {version="1.0.0" }
-polytone-proxy = {version="1.0.0" }
-polytone = {version="1.0.0" }
 
 sha256 = "1.4.0"
 
 [dev-dependencies]
 env_logger = "0.10.0"
+polytone-note = {version="1.0.0" }
+polytone-voice = {version="1.0.0" }
+polytone-proxy = {version="1.0.0" }
+polytone = {version="1.0.0" }
 
 # We don't use the following dependency directly,
 # we tighten the version so that builds with `-Zminimal-versions` work.
