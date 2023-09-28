@@ -5,7 +5,7 @@ use cosmwasm_std::Storage;
 #[cfg(feature = "iterator")]
 use cosmwasm_std::{Order, Record};
 
-use length_prefixed::{to_length_prefixed, to_length_prefixed_nested};
+pub use length_prefixed::*;
 #[cfg(feature = "iterator")]
 use namespace_helpers::range_with_prefix;
 use namespace_helpers::{get_with_prefix, remove_with_prefix, set_with_prefix};

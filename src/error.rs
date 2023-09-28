@@ -26,6 +26,9 @@ pub enum Error {
 
     #[error("code id {0}: no such code")]
     UnregisteredCodeId(u64),
+
+    #[error("Unregistered contract address, not present loccaly or on-chain")]
+    UnregisteredContractAddress(String),
 }
 
 impl Error {

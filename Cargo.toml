@@ -37,7 +37,46 @@ thiserror = "1.0"
 derivative = "2"
 sha2 = "0.10"
 
+# We don't use the following dependencies directly. They're dependencies of our dependencies.
+# We specify them to tighten their version requirements so that builds with `-Zminimal-versions` work.
+# Once we bump `cosmwasm-*` deps to a version after `1.1.5`, we can remove these.
+k256 = { version = "0.11.1", features = ["ecdsa"] }
+cw-orch-daemon = { version = "0.16.0"}
+cw-orch-networks = { version="0.16.0" }
+tokio = "1.28.2"
+ibc-chain-registry = "0.25.0"
+cosmwasm-vm = { version = "1.2", features = ["staking", "stargate", "iterator"] }
+bincode = "1.3.3"
+base64 = "0.21.2"
+cw20 = "1.0.1"
+ibc-relayer-types = "0.25.1"
+cosmrs = "0.14.0"
+num-bigint = "0.4.3"
+num-traits = "0.2.15"
+cosmwasm-crypto = "1.2.7"
+tonic = "0.9.2"
+generic_static = "0.2.0"
+once_cell = "1.18.0"
+lazy_static = "1.4.0"
+log = "0.4.19"
+env_logger = "0.10.0"
+cosmwasm-schema = "1.2.7"
+bech32 = "0.9.1"
+treediff = {version="4.0.2", features=["with-rustc-serialize"]}
+rustc-serialize = "0.3.24"
+
 [dev-dependencies]
 # We don't use the following dependency directly,
 # we tighten the version so that builds with `-Zminimal-versions` work.
 serde_json = "1.0.105"
+
+dotenv = "0.15.0"
+
+# Abstract
+# abstract-interface = {verion="0.16.1", git="https://github.com/AbstractSDK/contracts.git"}
+# abstract-core = {verion="0.16.1", git="https://github.com/AbstractSDK/contracts.git"}
+# abstract-dex-adapter = { git = "https://github.com/AbstractSDK/adapters.git", default-features = false }
+hex = "0.4.3"
+cw-asset = "3.0.0"
+
+moneymarket = {git="https://github.com/CavernPerson/money-market-contracts"}

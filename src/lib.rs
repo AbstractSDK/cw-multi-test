@@ -16,11 +16,11 @@ mod executor;
 mod gov;
 mod ibc;
 mod module;
-mod prefixed_storage;
+pub(crate) mod prefixed_storage;
 mod staking;
-mod test_helpers;
 mod transactions;
 mod wasm;
+pub mod wasm_emulation;
 
 pub use crate::app::{
     custom_app, next_block, App, AppBuilder, BasicApp, BasicAppBuilder, CosmosRouter, Router,
