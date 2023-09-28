@@ -46,7 +46,7 @@ const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
 pub const NAMESPACE_WASM: &[u8] = b"wasm";
 /// See <https://github.com/chipshort/wasmd/blob/d0e3ed19f041e65f112d8e800416b3230d0005a2/x/wasm/types/events.go#L58>
 const CONTRACT_ATTR: &str = "_contract_address";
-const LOCAL_CODE_OFFFSET: usize = 5_000_000;
+pub const LOCAL_CODE_OFFSET: usize = 5_000_000;
 
 #[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct WasmSudo {
@@ -288,7 +288,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
     /// Stores contract code in the in-memory lookup table.
     /// Returns an identifier of the stored contract code.
     pub fn store_code(&mut self, creator: Addr, code: WasmContract) -> u64 {
-        let code_id = self.code_base.len() + 1 + LOCAL_CODE_OFFFSET;
+        let code_id = self.code_base.len() + 1 + LOCAL_CODE_OFFSET;
         self.code_base.insert(code_id, code);
         self.code_data.insert(
             code_id,
@@ -308,7 +308,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
             .code_base
             .get(&(code_id as usize))
             .ok_or(Error::UnregisteredCodeId(code_id))?;
-        let code_id = self.code_base.len() + 1 + LOCAL_CODE_OFFFSET;
+        let code_id = self.code_base.len() + 1 + LOCAL_CODE_OFFSET;
         self.code_data.insert(
             code_id,
             CodeData {
