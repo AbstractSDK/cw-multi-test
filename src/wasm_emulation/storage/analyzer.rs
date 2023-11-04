@@ -10,6 +10,7 @@ use cw_orch_daemon::queriers::DaemonQuerier;
 use cw_utils::NativeBalance;
 use ibc_chain_registry::chain::ChainData;
 use rustc_serialize::json::Json;
+use serde::Serialize;
 use serde::__private::from_utf8_lossy;
 use treediff::diff;
 use treediff::tools::Recorder;
@@ -19,6 +20,12 @@ use crate::wasm::NAMESPACE_WASM;
 use crate::{wasm_emulation::input::QuerierStorage, App};
 
 use anyhow::Result as AnyResult;
+
+#[derive(Serialize)]
+pub struct SerializableCoin {
+    amount: String,
+    denom: String,
+}
 
 pub struct StorageAnalyzer {
     pub storage: QuerierStorage,
@@ -188,6 +195,46 @@ impl StorageAnalyzer {
             .find(|(a, _)| a.as_str() == addr)
             .map(|(_, b)| b.0.clone())
             .unwrap_or(vec![])
+    }
+
+    pub fn compare_all_balances(&self) {
+        let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+        let bank_querier = cw_orch_daemon::queriers::Bank::new(channel);
+        self.get_all_local_balances()
+            .into_iter()
+            .for_each(|(addr, balances)| {
+                // We look for the data at that key on the contract
+                let distant_data = rt.block_on(bank_querier.balance(addr.clone(), None));
+
+                if let Ok(data) = distant_data {
+                    let distant_coins: Vec<Coin> = data
+                        .iter()
+                        .map(|c| Coin {
+                            amount: c.amount.parse().unwrap(),
+                            denom: c.denom.clone(),
+                        })
+                        .collect();
+
+                    let distant_coins = serde_json::to_string(&distant_coins).unwrap();
+                    let distant_coins: Json = distant_coins.parse().unwrap();
+
+                    let local_coins = serde_json::to_string(&balances.0).unwrap();
+                    let local_coins: Json = local_coins.parse().unwrap();
+
+                    let mut d = Recorder::default();
+                    diff(&distant_coins, &local_coins, &mut d);
+
+                    let changes: Vec<_> = d
+                        .calls
+                        .iter()
+                        .filter(|change| {
+                            !matches!(change, treediff::tools::ChangeType::Unchanged(..))
+                        })
+                        .collect();
+
+                    log::info!("Bank balance for {} changed like so : {:?}", addr, changes);
+                }
+            });
     }
 
     pub fn get_all_local_balances(&self) -> Vec<(Addr, NativeBalance)> {

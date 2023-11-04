@@ -64,6 +64,7 @@ cosmwasm-schema = "1.2.7"
 bech32 = "0.9.1"
 treediff = {version="4.0.2", features=["with-rustc-serialize"]}
 rustc-serialize = "0.3.24"
+serde_json = "1.0.105"
 
 [dev-dependencies]
 # We don't use the following dependency directly,
