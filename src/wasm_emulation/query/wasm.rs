@@ -12,7 +12,7 @@ use cosmwasm_std::testing::mock_env;
 use cosmwasm_vm::GasInfo;
 use cw_orch_daemon::queriers::DaemonQuerier;
 
-use cosmwasm_std::{to_binary, Addr, ContractInfoResponse, SystemResult};
+use cosmwasm_std::{to_binary, Addr, ContractInfoResponse, SystemResult, SystemError};
 use cosmwasm_std::{ContractResult, Empty};
 use cw_orch_daemon::queriers::CosmWasm;
 
@@ -119,7 +119,7 @@ impl WasmQuerier {
                 let mut env = mock_env();
                 env.contract.address = addr.clone();
                 // Here we specify empty because we only car about the query result
-                let result: WasmRunnerOutput<Empty> = contract
+                let result: Result<WasmRunnerOutput<Empty>, _> = contract
                     .run_contract(InstanceArguments {
                         function: WasmFunction::Query(QueryArgs {
                             env,
@@ -127,8 +127,19 @@ impl WasmQuerier {
                         }),
                         querier_storage: self.current_storage.clone(),
                         init_storage: self.current_storage.wasm.get_contract_storage(&addr),
-                    })
-                    .unwrap();
+                    });
+
+                let result = if let Err(e) = result{
+                    return (
+                        SystemResult::Err(SystemError::InvalidRequest{
+                            error: format!("Error querying a contract: {}", e),
+                            request: msg.clone()
+                        }),
+                        GasInfo::with_externally_used(0),
+                    )
+                }else{
+                    result.unwrap()
+                };
 
                 let bin = match result.wasm {
                     WasmOutput::Query(bin) => bin,
