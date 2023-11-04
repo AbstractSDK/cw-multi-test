@@ -7,6 +7,7 @@ use cosmwasm_std::Addr;
 use cosmwasm_std::Coin;
 use cw_orch_daemon::queriers::CosmWasm;
 use cw_orch_daemon::queriers::DaemonQuerier;
+use cw_utils::NativeBalance;
 use ibc_chain_registry::chain::ChainData;
 use rustc_serialize::json::Json;
 use serde::__private::from_utf8_lossy;
@@ -187,5 +188,9 @@ impl StorageAnalyzer {
             .find(|(a, _)| a.as_str() == addr)
             .map(|(_, b)| b.0.clone())
             .unwrap_or(vec![])
+    }
+
+    pub fn get_all_local_balances(&self) -> Vec<(Addr, NativeBalance)> {
+        self.storage.bank.storage.clone()
     }
 }

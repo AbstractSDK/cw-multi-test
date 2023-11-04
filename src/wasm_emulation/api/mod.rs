@@ -30,13 +30,12 @@ pub const MAX_PREFIX_CHARS: usize = 10;
 // This allows one to specify a string prefix and still implement Copy
 #[derive(Clone, Copy)]
 pub struct RealApi {
-    pub prefix: [char; MAX_PREFIX_CHARS]
+    pub prefix: [char; MAX_PREFIX_CHARS],
 }
 
 impl RealApi {
     pub fn new(prefix: &str) -> RealApi {
-
-        if prefix.len() > MAX_PREFIX_CHARS{
+        if prefix.len() > MAX_PREFIX_CHARS {
             panic!("More chars in the prefix than {}", MAX_PREFIX_CHARS);
         }
 
@@ -44,14 +43,12 @@ impl RealApi {
         for (i, c) in prefix.chars().enumerate() {
             api_prefix[i] = c;
         }
-        Self {
-            prefix: api_prefix
-        }
+        Self { prefix: api_prefix }
     }
 
     pub fn get_prefix(&self) -> String {
         let mut prefix = Vec::new();
-    
+
         for &c in self.prefix.iter() {
             if c != '\0' {
                 prefix.push(c);
@@ -112,13 +109,12 @@ impl BackendApi for RealApi {
     }
 }
 
-
 #[cfg(test)]
-mod test{
+mod test {
     use super::RealApi;
 
     #[test]
-    fn prefix(){
+    fn prefix() {
         let prefix = "migaloo";
 
         let api = RealApi::new(prefix);
@@ -129,7 +125,7 @@ mod test{
 
     #[test]
     #[should_panic]
-    fn too_long_prefix(){
+    fn too_long_prefix() {
         let prefix = "migaloowithotherchars";
         RealApi::new(prefix);
     }

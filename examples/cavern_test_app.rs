@@ -187,6 +187,4 @@
 //     analysis.compare_all_readable_contract_storage();
 // }
 
-fn main(){
-    
-}
+fn main() {}
