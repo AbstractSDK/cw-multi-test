@@ -25,42 +25,27 @@ pub fn bytes_from_bech32(address: &str, prefix: &str) -> Result<Vec<u8>, Backend
     Ok(Vec::<u8>::from_base32(&data).unwrap())
 }
 
-// Prefixes are limited to 6 chars
+pub const MAX_PREFIX_CHARS: usize = 10;
+// Prefixes are limited to MAX_PREFIX_CHARS chars
 // This allows one to specify a string prefix and still implement Copy
 #[derive(Clone, Copy)]
 pub struct RealApi {
-    pub prefix1: Option<char>,
-    pub prefix2: Option<char>,
-    pub prefix3: Option<char>,
-    pub prefix4: Option<char>,
-    pub prefix5: Option<char>,
-    pub prefix6: Option<char>,
+    pub prefix: [char; MAX_PREFIX_CHARS]
 }
 
 impl RealApi {
     pub fn new(prefix: &str) -> RealApi {
-        let mut chars = prefix.chars();
+        let chars: Vec<char> = prefix.chars().collect();
+        if chars.len() > MAX_PREFIX_CHARS{
+            panic!("More chars in the prefix than {}", MAX_PREFIX_CHARS);
+        }
         Self {
-            prefix1: chars.next(),
-            prefix2: chars.next(),
-            prefix3: chars.next(),
-            prefix4: chars.next(),
-            prefix5: chars.next(),
-            prefix6: chars.next(),
+            prefix: chars[0..10].try_into().unwrap()
         }
     }
 
     pub fn get_prefix(&self) -> String {
-        let collection = [
-            self.prefix1,
-            self.prefix2,
-            self.prefix3,
-            self.prefix4,
-            self.prefix5,
-            self.prefix6,
-        ];
-
-        collection.iter().filter_map(|e| *e).collect()
+        self.prefix.iter().collect()
     }
 
     pub fn next_address(&self, count: usize) -> Addr {
