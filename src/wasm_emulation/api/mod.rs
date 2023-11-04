@@ -35,17 +35,29 @@ pub struct RealApi {
 
 impl RealApi {
     pub fn new(prefix: &str) -> RealApi {
-        let chars: Vec<char> = prefix.chars().collect();
-        if chars.len() > MAX_PREFIX_CHARS{
+
+        if prefix.len() > MAX_PREFIX_CHARS{
             panic!("More chars in the prefix than {}", MAX_PREFIX_CHARS);
         }
+
+        let mut api_prefix = ['\0'; 10];
+        for (i, c) in prefix.chars().enumerate() {
+            api_prefix[i] = c;
+        }
         Self {
-            prefix: chars[0..10].try_into().unwrap()
+            prefix: api_prefix
         }
     }
 
     pub fn get_prefix(&self) -> String {
-        self.prefix.iter().collect()
+        let mut prefix = Vec::new();
+    
+        for &c in self.prefix.iter() {
+            if c != '\0' {
+                prefix.push(c);
+            }
+        }
+        prefix.iter().collect()
     }
 
     pub fn next_address(&self, count: usize) -> Addr {
@@ -97,5 +109,28 @@ impl BackendApi for RealApi {
             .map_err(|e| BackendError::Unknown { msg: e.to_string() });
 
         (human, gas_cost)
+    }
+}
+
+
+#[cfg(test)]
+mod test{
+    use super::RealApi;
+
+    #[test]
+    fn prefix(){
+        let prefix = "migaloo";
+
+        let api = RealApi::new(prefix);
+
+        let final_prefix = api.get_prefix();
+        assert_eq!(prefix, final_prefix);
+    }
+
+    #[test]
+    #[should_panic]
+    fn too_long_prefix(){
+        let prefix = "migaloowithotherchars";
+        RealApi::new(prefix);
     }
 }
