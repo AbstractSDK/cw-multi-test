@@ -87,8 +87,6 @@ impl BackendApi for RealApi {
     fn human_address(&self, canon: &[u8]) -> (Result<String, BackendError>, GasInfo) {
         let gas_cost = GasInfo::with_externally_used(GAS_COST_HUMANIZE);
 
-        log::info!("address {:?}", canon);
-
         if canon.len() != SHORT_CANON_LEN && canon.len() != LONG_CANON_LEN {
             return (
                 Err(BackendError::Unknown {
