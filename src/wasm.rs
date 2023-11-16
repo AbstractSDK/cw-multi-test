@@ -5,6 +5,7 @@ use cw_orch_daemon::queriers::CosmWasm;
 use cw_orch_daemon::queriers::DaemonQuerier;
 
 use ibc_chain_registry::chain::ChainData;
+use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -141,6 +142,7 @@ pub struct WasmKeeper<ExecC, QueryC> {
 
     // chain on which the contract should be queried/tested against
     chain: Option<ChainData>,
+    rt: Runtime
 }
 
 pub trait AddressGenerator {
@@ -175,6 +177,7 @@ impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
             _q: std::marker::PhantomData,
             generator: Box::new(SimpleAddressGenerator()),
             chain: None,
+            rt: Runtime::new().unwrap()
         }
     }
 }
@@ -365,8 +368,9 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
     pub fn load_distant_contract(
         chain: impl Into<SerChainData>,
         address: &Addr,
+        rt: &Runtime
     ) -> AnyResult<ContractData> {
-        let (rt, channel) = get_channel(chain)?;
+        let channel = get_channel(chain, &rt)?;
 
         let wasm_querier = CosmWasm::new(channel);
 
@@ -392,7 +396,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
             return Ok(local_contract);
         }
 
-        Self::load_distant_contract(self.chain.clone().unwrap(), address)
+        Self::load_distant_contract(self.chain.clone().unwrap(), address, &self.rt)
     }
 
     pub fn dump_wasm_raw(&self, storage: &dyn Storage, address: &Addr) -> Vec<Record> {

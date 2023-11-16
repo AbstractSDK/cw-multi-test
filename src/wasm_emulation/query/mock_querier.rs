@@ -20,6 +20,7 @@ use cosmwasm_std::{FullDelegation, Validator};
 
 use cosmwasm_std::Attribute;
 use cosmwasm_std::QuerierResult;
+use tokio::runtime::Runtime;
 
 use crate::wasm_emulation::input::QuerierStorage;
 
@@ -43,6 +44,7 @@ pub struct MockQuerier<C: DeserializeOwned = Empty> {
     ///
     /// Use box to avoid the need of another generic type
     custom_handler: Box<dyn for<'a> Fn(&'a C) -> QueryResultWithGas>,
+    rt: Runtime
 }
 
 impl<C: DeserializeOwned> MockQuerier<C> {
@@ -65,6 +67,7 @@ impl<C: DeserializeOwned> MockQuerier<C> {
                     GasInfo::free(),
                 )
             }),
+            rt: Runtime::new().unwrap()
         }
     }
 
@@ -122,11 +125,11 @@ impl<C: CustomQuery + DeserializeOwned> cosmwasm_vm::Querier for MockQuerier<C> 
 impl<C: CustomQuery + DeserializeOwned> MockQuerier<C> {
     pub fn handle_query(&self, request: &QueryRequest<C>) -> QueryResultWithGas {
         match &request {
-            QueryRequest::Bank(bank_query) => self.bank.query(bank_query),
+            QueryRequest::Bank(bank_query) => self.bank.query(&self.rt, bank_query),
             QueryRequest::Custom(custom_query) => (*self.custom_handler)(custom_query),
 
             QueryRequest::Staking(staking_query) => self.staking.query(staking_query),
-            QueryRequest::Wasm(msg) => self.wasm.query(msg),
+            QueryRequest::Wasm(msg) => self.wasm.query(&self.rt, msg),
             QueryRequest::Stargate { .. } => (
                 SystemResult::Err(SystemError::UnsupportedRequest {
                     kind: "Stargate".to_string(),

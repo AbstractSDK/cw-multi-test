@@ -1,4 +1,4 @@
-use crate::wasm_emulation::channel::get_channel;
+use crate::wasm_emulation::channel::get_rt_and_channel;
 use crate::wasm_emulation::input::SerChainData;
 use crate::wasm_emulation::storage::mock_storage::{GAS_COST_LAST_ITERATION, GAS_COST_RANGE};
 
@@ -108,7 +108,7 @@ impl Storage for DualStorage {
         let (mut value, gas_info) = self.local_storage.get(key);
         // If it's not available, we query it online if it was not removed locally
         if !self.removed_keys.contains(key) && value.as_ref().unwrap().is_none() {
-            let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+            let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
             let wasm_querier = CosmWasm::new(channel);
 
             let distant_result = rt.block_on(
@@ -181,7 +181,7 @@ impl Storage for DualStorage {
         if iterator.distant_iter.position == iterator.distant_iter.data.len()
             && iterator.distant_iter.key.is_some()
         {
-            let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+            let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
             let wasm_querier = CosmWasm::new(channel);
             let new_keys = rt
                 .block_on(wasm_querier.all_contract_state(

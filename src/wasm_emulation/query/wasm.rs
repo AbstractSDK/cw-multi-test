@@ -17,6 +17,7 @@ use cosmwasm_std::{ContractResult, Empty};
 use cw_orch_daemon::queriers::CosmWasm;
 
 use cosmwasm_std::WasmQuery;
+use tokio::runtime::Runtime;
 
 use crate::wasm_emulation::channel::get_channel;
 use crate::WasmKeeper;
@@ -37,7 +38,7 @@ impl WasmQuerier {
         }
     }
 
-    pub fn query(&self, request: &WasmQuery) -> QueryResultWithGas {
+    pub fn query(&self, rt: &Runtime, request: &WasmQuery) -> QueryResultWithGas {
         match request {
             WasmQuery::ContractInfo { contract_addr } => {
                 let addr = Addr::unchecked(contract_addr);
@@ -46,7 +47,7 @@ impl WasmQuerier {
                 {
                     local_contract.clone()
                 } else {
-                    WasmKeeper::<Empty, Empty>::load_distant_contract(self.chain.clone(), &addr)
+                    WasmKeeper::<Empty, Empty>::load_distant_contract(self.chain.clone(), &addr, rt)
                         .unwrap()
                 };
                 let mut response = ContractInfoResponse::default();
@@ -73,7 +74,7 @@ impl WasmQuerier {
                 {
                     value.1.clone()
                 } else {
-                    let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+                    let channel = get_channel(self.chain.clone(), rt).unwrap();
                     let wasm_querier = CosmWasm::new(channel);
                     let query_result = rt
                         .block_on(

@@ -45,6 +45,7 @@ use cosmwasm_std::{Binary, CustomQuery, Deps, DepsMut, Env, MessageInfo, Reply, 
 use anyhow::Result as AnyResult;
 
 use super::channel::get_channel;
+use super::channel::get_rt_and_channel;
 use super::input::ExecuteArgs;
 use super::input::InstantiateArgs;
 use super::input::MigrateArgs;
@@ -155,7 +156,7 @@ impl WasmContract {
                 chain,
                 contract_addr,
             }) => {
-                let (rt, channel) = get_channel(chain.clone())?;
+                let (rt, channel) = get_rt_and_channel(chain.clone())?;
                 let wasm_querier = CosmWasm::new(channel);
 
                 let code_info = rt.block_on(wasm_querier.contract_info(contract_addr))?;
@@ -163,7 +164,7 @@ impl WasmContract {
                 Ok(code)
             }
             WasmContract::DistantCodeId(DistantCodeId { chain, code_id }) => {
-                let (rt, channel) = get_channel(chain.clone())?;
+                let (rt, channel) = get_rt_and_channel(chain.clone())?;
                 let wasm_querier = CosmWasm::new(channel);
 
                 let code = rt.block_on(wasm_querier.code_data(*code_id))?;

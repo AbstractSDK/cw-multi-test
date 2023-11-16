@@ -2,6 +2,7 @@ use crate::prefixed_storage::decode_length;
 use crate::prefixed_storage::to_length_prefixed;
 use crate::prefixed_storage::CONTRACT_STORAGE_PREFIX;
 use crate::wasm_emulation::channel::get_channel;
+use crate::wasm_emulation::channel::get_rt_and_channel;
 use crate::wasm_emulation::input::get_querier_storage;
 use cosmwasm_std::Addr;
 use cosmwasm_std::Coin;
@@ -114,7 +115,7 @@ impl StorageAnalyzer {
     }
 
     pub fn compare_all_readable_contract_storage(&self) {
-        let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+        let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
         let wasm_querier = CosmWasm::new(channel);
         self.all_contract_storage()
             .into_iter()
@@ -198,7 +199,7 @@ impl StorageAnalyzer {
     }
 
     pub fn compare_all_balances(&self) {
-        let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+        let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
         let bank_querier = cw_orch_daemon::queriers::Bank::new(channel);
         self.get_all_local_balances()
             .into_iter()

@@ -3,6 +3,7 @@ use crate::wasm_emulation::query::gas::{GAS_COST_ALL_BALANCE_QUERY, GAS_COST_BAL
 use crate::wasm_emulation::query::mock_querier::QueryResultWithGas;
 use cosmwasm_std::Addr;
 use cosmwasm_vm::GasInfo;
+use tokio::runtime::Runtime;
 use std::str::FromStr;
 
 use cw_orch_daemon::queriers::DaemonQuerier;
@@ -73,7 +74,7 @@ impl BankQuerier {
         supplies
     }
 
-    pub fn query(&self, request: &BankQuery) -> QueryResultWithGas {
+    pub fn query(&self, rt: &Runtime, request: &BankQuery) -> QueryResultWithGas {
         let contract_result: ContractResult<Binary> = match request {
             BankQuery::Balance { address, denom } => {
                 // proper error on not found, serialize result on found
@@ -84,7 +85,7 @@ impl BankQuerier {
 
                 // If the amount is not available, we query it from the distant chain
                 if amount.is_none() {
-                    let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+                    let channel = get_channel(self.chain.clone(), &rt).unwrap();
                     let querier = Bank::new(channel);
 
                     let query_result = rt
@@ -110,7 +111,7 @@ impl BankQuerier {
 
                 // We query only if the bank balance doesn't exist
                 if amount.is_none() {
-                    let (rt, channel) = get_channel(self.chain.clone()).unwrap();
+                    let channel = get_channel(self.chain.clone(), rt).unwrap();
                     let querier = Bank::new(channel);
                     let query_result: Result<Vec<Coin>, _> =
                         rt.block_on(querier.balance(address, None)).map(|result| {

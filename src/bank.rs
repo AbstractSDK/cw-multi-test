@@ -1,5 +1,7 @@
 use crate::wasm_emulation::input::BankStorage;
 use cw_orch_daemon::queriers::DaemonQuerier;
+use tokio::runtime::Runtime;
+use tonic::transport::Channel;
 use std::str::FromStr;
 
 use ibc_chain_registry::chain::ChainData;
@@ -37,18 +39,22 @@ pub enum BankSudo {
 
 pub trait Bank: Module<ExecT = BankMsg, QueryT = BankQuery, SudoT = BankSudo> + AllQuerier {}
 
-#[derive(Default)]
 pub struct BankKeeper {
-    chain: Option<ChainData>,
+    rt: Runtime,
+    channel: Option<Channel>
 }
 
 impl BankKeeper {
     pub fn new() -> Self {
-        BankKeeper::default()
+        BankKeeper{
+            rt: Runtime::new().unwrap(),
+            channel: None
+        }
     }
 
     pub fn set_chain(&mut self, chain: ChainData) {
-        self.chain = Some(chain)
+        let channel = get_channel(chain, &self.rt).unwrap();
+        self.channel = Some(channel);
     }
 
     // this is an "admin" function to let us adjust bank accounts in genesis
@@ -79,9 +85,9 @@ impl BankKeeper {
     fn get_balance(&self, bank_storage: &dyn Storage, account: &Addr) -> AnyResult<Vec<Coin>> {
         // If there is no balance present, we query it on the distant chain
         if !BALANCES.has(bank_storage, account) {
-            let (rt, channel) = get_channel(self.chain.clone().unwrap())?;
+            let channel = self.channel.clone().unwrap();
             let querier = cw_orch_daemon::queriers::Bank::new(channel);
-            let distant_amounts: Vec<Coin> = rt
+            let distant_amounts: Vec<Coin> = self.rt
                 .block_on(querier.balance(account, None))
                 .map(|result| {
                     result
