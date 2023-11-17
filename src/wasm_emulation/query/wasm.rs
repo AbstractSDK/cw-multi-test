@@ -4,7 +4,6 @@ use crate::wasm_emulation::query::mock_querier::QueryResultWithGas;
 
 use crate::wasm_emulation::contract::WasmContract;
 use crate::wasm_emulation::input::QuerierStorage;
-use crate::wasm_emulation::input::SerChainData;
 use crate::wasm_emulation::input::WasmFunction;
 use crate::wasm_emulation::output::WasmOutput;
 use crate::wasm_emulation::output::WasmRunnerOutput;
@@ -17,28 +16,26 @@ use cosmwasm_std::{ContractResult, Empty};
 use cw_orch_daemon::queriers::CosmWasm;
 
 use cosmwasm_std::WasmQuery;
-use tokio::runtime::Runtime;
 
-use crate::wasm_emulation::channel::get_channel;
+use crate::wasm_emulation::channel::RemoteChannel;
 use crate::WasmKeeper;
 
 use crate::wasm_emulation::input::{InstanceArguments, QueryArgs};
 
 pub struct WasmQuerier {
-    chain: SerChainData,
     current_storage: QuerierStorage,
+    remote: RemoteChannel,
 }
 
 impl WasmQuerier {
-    pub fn new(chain: impl Into<SerChainData>, storage: Option<QuerierStorage>) -> Self {
-        let chain = chain.into();
+    pub fn new(remote: RemoteChannel, storage: Option<QuerierStorage>) -> Self {
         Self {
-            chain,
             current_storage: storage.unwrap_or(Default::default()),
+            remote,
         }
     }
 
-    pub fn query(&self, rt: &Runtime, request: &WasmQuery) -> QueryResultWithGas {
+    pub fn query(&self, remote: RemoteChannel, request: &WasmQuery) -> QueryResultWithGas {
         match request {
             WasmQuery::ContractInfo { contract_addr } => {
                 let addr = Addr::unchecked(contract_addr);
@@ -47,11 +44,11 @@ impl WasmQuerier {
                 {
                     local_contract.clone()
                 } else {
-                    WasmKeeper::<Empty, Empty>::load_distant_contract(self.chain.clone(), &addr, rt)
+                    WasmKeeper::<Empty, Empty>::load_distant_contract(self.remote.clone(), &addr)
                         .unwrap()
                 };
                 let mut response = ContractInfoResponse::default();
-                response.code_id = data.code_id.try_into().unwrap();
+                response.code_id = data.code_id;
                 response.creator = data.creator.to_string();
                 response.admin = data.admin.map(|a| a.to_string());
                 (
@@ -74,9 +71,9 @@ impl WasmQuerier {
                 {
                     value.1.clone()
                 } else {
-                    let channel = get_channel(self.chain.clone(), rt).unwrap();
-                    let wasm_querier = CosmWasm::new(channel);
-                    let query_result = rt
+                    let wasm_querier = CosmWasm::new(remote.channel);
+                    let query_result = remote
+                        .rt
                         .block_on(
                             wasm_querier
                                 .contract_raw_state(contract_addr.to_string(), key.to_vec()),
@@ -105,30 +102,26 @@ impl WasmQuerier {
                         // We execute the query
                         code_info.clone()
                     } else {
-                        WasmContract::new_distant_code_id(
-                            local_contract.code_id.try_into().unwrap(),
-                            self.chain.clone(),
-                        )
+                        WasmContract::new_distant_code_id(local_contract.code_id)
                     }
                 } else {
-                    WasmContract::new_distant_contract(
-                        contract_addr.to_string(),
-                        self.chain.clone(),
-                    )
+                    WasmContract::new_distant_contract(contract_addr.to_string())
                 };
 
                 let mut env = mock_env();
                 env.contract.address = addr.clone();
                 // Here we specify empty because we only car about the query result
-                let result: Result<WasmRunnerOutput<Empty>, _> =
-                    contract.run_contract(InstanceArguments {
+                let result: Result<WasmRunnerOutput<Empty>, _> = contract.run_contract(
+                    InstanceArguments {
                         function: WasmFunction::Query(QueryArgs {
                             env,
                             msg: msg.to_vec(),
                         }),
                         querier_storage: self.current_storage.clone(),
                         init_storage: self.current_storage.wasm.get_contract_storage(&addr),
-                    });
+                    },
+                    self.remote.clone(),
+                );
 
                 let result = if let Err(e) = result {
                     return (

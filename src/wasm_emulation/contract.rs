@@ -1,7 +1,6 @@
 use crate::wasm_emulation::api::RealApi;
 use crate::wasm_emulation::input::get_querier_storage;
 use crate::wasm_emulation::input::ReplyArgs;
-use crate::wasm_emulation::input::SerChainData;
 use crate::wasm_emulation::output::StorageChanges;
 use crate::wasm_emulation::query::MockQuerier;
 use crate::wasm_emulation::storage::DualStorage;
@@ -44,8 +43,7 @@ use cosmwasm_std::{Binary, CustomQuery, Deps, DepsMut, Env, MessageInfo, Reply, 
 
 use anyhow::Result as AnyResult;
 
-use super::channel::get_channel;
-use super::channel::get_rt_and_channel;
+use super::channel::RemoteChannel;
 use super::input::ExecuteArgs;
 use super::input::InstantiateArgs;
 use super::input::MigrateArgs;
@@ -77,19 +75,16 @@ const DEFAULT_PRINT_DEBUG: bool = true;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DistantContract {
     pub contract_addr: String,
-    pub chain: SerChainData,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DistantCodeId {
     pub code_id: u64,
-    pub chain: SerChainData,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LocalContract {
     pub code: Vec<u8>,
-    pub chain: SerChainData,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -103,15 +98,14 @@ impl std::fmt::Debug for LocalContract {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
             f,
-            "LocalContract {{ checksum: {}, chain: {:?} }}",
+            "LocalContract {{ checksum: {} }}",
             Checksum::generate(&self.code),
-            self.chain
         )
     }
 }
 
 impl WasmContract {
-    pub fn new_local(code: Vec<u8>, chain: impl Into<SerChainData>) -> Self {
+    pub fn new_local(code: Vec<u8>) -> Self {
         check_wasm(
             &code,
             &HashSet::from([
@@ -121,53 +115,35 @@ impl WasmContract {
             ]),
         )
         .unwrap();
-        Self::Local(LocalContract {
-            code,
-            chain: chain.into(),
-        })
+        Self::Local(LocalContract { code })
     }
 
-    pub fn new_distant_contract(contract_addr: String, chain: impl Into<SerChainData>) -> Self {
-        Self::DistantContract(DistantContract {
-            contract_addr,
-            chain: chain.into(),
-        })
+    pub fn new_distant_contract(contract_addr: String) -> Self {
+        Self::DistantContract(DistantContract { contract_addr })
     }
 
-    pub fn new_distant_code_id(code_id: u64, chain: impl Into<SerChainData>) -> Self {
-        Self::DistantCodeId(DistantCodeId {
-            code_id,
-            chain: chain.into(),
-        })
+    pub fn new_distant_code_id(code_id: u64) -> Self {
+        Self::DistantCodeId(DistantCodeId { code_id })
     }
 
-    pub fn get_chain(&self) -> SerChainData {
-        match self {
-            WasmContract::Local(LocalContract { chain, .. }) => chain.clone(),
-            WasmContract::DistantContract(DistantContract { chain, .. }) => chain.clone(),
-            WasmContract::DistantCodeId(DistantCodeId { chain, .. }) => chain.clone(),
-        }
-    }
-
-    pub fn get_code(&self) -> AnyResult<Vec<u8>> {
+    pub fn get_code(&self, remote: RemoteChannel) -> AnyResult<Vec<u8>> {
         match self {
             WasmContract::Local(LocalContract { code, .. }) => Ok(code.clone()),
-            WasmContract::DistantContract(DistantContract {
-                chain,
-                contract_addr,
-            }) => {
-                let (rt, channel) = get_rt_and_channel(chain.clone())?;
-                let wasm_querier = CosmWasm::new(channel);
+            WasmContract::DistantContract(DistantContract { contract_addr }) => {
+                let wasm_querier = CosmWasm::new(remote.channel);
 
-                let code_info = rt.block_on(wasm_querier.contract_info(contract_addr))?;
-                let code = rt.block_on(wasm_querier.code_data(code_info.code_id))?;
+                let code_info = remote
+                    .rt
+                    .block_on(wasm_querier.contract_info(contract_addr))?;
+                let code = remote
+                    .rt
+                    .block_on(wasm_querier.code_data(code_info.code_id))?;
                 Ok(code)
             }
-            WasmContract::DistantCodeId(DistantCodeId { chain, code_id }) => {
-                let (rt, channel) = get_rt_and_channel(chain.clone())?;
-                let wasm_querier = CosmWasm::new(channel);
+            WasmContract::DistantCodeId(DistantCodeId { code_id }) => {
+                let wasm_querier = CosmWasm::new(remote.channel);
 
-                let code = rt.block_on(wasm_querier.code_data(*code_id))?;
+                let code = remote.rt.block_on(wasm_querier.code_data(*code_id))?;
                 Ok(code)
             }
         }
@@ -176,23 +152,23 @@ impl WasmContract {
     pub fn run_contract<ExecC: CustomMsg + DeserializeOwned>(
         &self,
         args: InstanceArguments,
+        remote: RemoteChannel,
     ) -> AnyResult<WasmRunnerOutput<ExecC>> {
         let InstanceArguments {
             function,
             init_storage,
             querier_storage,
         } = args;
-        let chain: SerChainData = self.get_chain();
         let address = function.get_address();
-        let code = self.get_code()?;
+        let code = self.get_code(remote.clone())?;
 
-        let api = RealApi::new(&chain.bech32_prefix);
+        let api = RealApi::new(&remote.chain.bech32_prefix);
 
         // We create the backend here from outside information;
         let backend = Backend {
             api,
-            storage: DualStorage::new(chain.clone(), address.to_string(), Some(init_storage))?,
-            querier: MockQuerier::<Empty>::new(chain, Some(querier_storage)),
+            storage: DualStorage::new(remote.clone(), address.to_string(), Some(init_storage))?,
+            querier: MockQuerier::<Empty>::new(remote, Some(querier_storage)),
         };
         let options = InstanceOptions {
             gas_limit: DEFAULT_GAS_LIMIT,
@@ -248,12 +224,11 @@ where
     fn execute(
         &self,
         deps: DepsMut<QueryC>,
-        mut env: Env,
+        env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<ExecC>> {
-        env.block.chain_id = self.get_chain().chain_id.to_string();
-
         // We start by building the dependencies we will pass through the wasm executer
         let execute_args = InstanceArguments {
             function: WasmFunction::Execute(ExecuteArgs { env, info, msg }),
@@ -261,7 +236,7 @@ where
             querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(execute_args)?;
+        let decoded_result = self.run_contract(execute_args, remote)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -275,11 +250,11 @@ where
     fn instantiate(
         &self,
         deps: DepsMut<QueryC>,
-        mut env: Env,
+        env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<ExecC>> {
-        env.block.chain_id = self.get_chain().chain_id.to_string();
         // We start by building the dependencies we will pass through the wasm executer
         let instantiate_arguments = InstanceArguments {
             function: WasmFunction::Instantiate(InstantiateArgs { env, info, msg }),
@@ -287,7 +262,7 @@ where
             querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(instantiate_arguments)?;
+        let decoded_result = self.run_contract(instantiate_arguments, remote)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -298,9 +273,13 @@ where
         }
     }
 
-    fn query(&self, deps: Deps<QueryC>, mut env: Env, msg: Vec<u8>) -> AnyResult<Binary> {
-        env.block.chain_id = self.get_chain().chain_id.to_string();
-
+    fn query(
+        &self,
+        deps: Deps<QueryC>,
+        env: Env,
+        msg: Vec<u8>,
+        remote: RemoteChannel,
+    ) -> AnyResult<Binary> {
         // We start by building the dependencies we will pass through the wasm executer
         let query_arguments = InstanceArguments {
             function: WasmFunction::Query(QueryArgs { env, msg }),
@@ -308,7 +287,7 @@ where
             querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result: WasmRunnerOutput<Empty> = self.run_contract(query_arguments)?;
+        let decoded_result: WasmRunnerOutput<Empty> = self.run_contract(query_arguments, remote)?;
 
         self.after_execution_callback(&decoded_result);
 
@@ -322,17 +301,17 @@ where
     fn sudo(
         &self,
         deps: DepsMut<QueryC>,
-        mut env: Env,
+        env: Env,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<ExecC>> {
-        env.block.chain_id = self.get_chain().chain_id.to_string();
         let sudo_args = InstanceArguments {
             function: WasmFunction::Sudo(SudoArgs { env, msg }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
             querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(sudo_args)?;
+        let decoded_result = self.run_contract(sudo_args, remote)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -347,17 +326,17 @@ where
     fn reply(
         &self,
         deps: DepsMut<QueryC>,
-        mut env: Env,
+        env: Env,
         reply: Reply,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<ExecC>> {
-        env.block.chain_id = self.get_chain().chain_id.to_string();
         let reply_args = InstanceArguments {
             function: WasmFunction::Reply(ReplyArgs { env, reply }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
             querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(reply_args)?;
+        let decoded_result = self.run_contract(reply_args, remote)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -372,17 +351,17 @@ where
     fn migrate(
         &self,
         deps: DepsMut<QueryC>,
-        mut env: Env,
+        env: Env,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<ExecC>> {
-        env.block.chain_id = self.get_chain().chain_id.to_string();
         let migrate_args = InstanceArguments {
             function: WasmFunction::Migrate(MigrateArgs { env, msg }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
             querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(migrate_args)?;
+        let decoded_result = self.run_contract(migrate_args, remote)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);

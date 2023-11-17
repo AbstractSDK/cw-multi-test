@@ -1,10 +1,6 @@
 use crate::wasm_emulation::input::BankStorage;
 use cw_orch_daemon::queriers::DaemonQuerier;
-use tokio::runtime::Runtime;
-use tonic::transport::Channel;
 use std::str::FromStr;
-
-use ibc_chain_registry::chain::ChainData;
 
 use anyhow::{bail, Result as AnyResult};
 use itertools::Itertools;
@@ -22,7 +18,7 @@ use crate::executor::AppResponse;
 use crate::module::Module;
 use crate::prefixed_storage::{prefixed, prefixed_read};
 
-use crate::wasm_emulation::channel::get_channel;
+use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::query::AllQuerier;
 
 const BALANCES: Map<&Addr, NativeBalance> = Map::new("balances");
@@ -39,22 +35,18 @@ pub enum BankSudo {
 
 pub trait Bank: Module<ExecT = BankMsg, QueryT = BankQuery, SudoT = BankSudo> + AllQuerier {}
 
+#[derive(Default)]
 pub struct BankKeeper {
-    rt: Runtime,
-    channel: Option<Channel>
+    remote: Option<RemoteChannel>,
 }
 
 impl BankKeeper {
     pub fn new() -> Self {
-        BankKeeper{
-            rt: Runtime::new().unwrap(),
-            channel: None
-        }
+        BankKeeper::default()
     }
 
-    pub fn set_chain(&mut self, chain: ChainData) {
-        let channel = get_channel(chain, &self.rt).unwrap();
-        self.channel = Some(channel);
+    pub fn set_remote(&mut self, remote: RemoteChannel) {
+        self.remote = Some(remote);
     }
 
     // this is an "admin" function to let us adjust bank accounts in genesis
@@ -85,9 +77,13 @@ impl BankKeeper {
     fn get_balance(&self, bank_storage: &dyn Storage, account: &Addr) -> AnyResult<Vec<Coin>> {
         // If there is no balance present, we query it on the distant chain
         if !BALANCES.has(bank_storage, account) {
-            let channel = self.channel.clone().unwrap();
+            let channel = self.remote.clone().unwrap().channel;
             let querier = cw_orch_daemon::queriers::Bank::new(channel);
-            let distant_amounts: Vec<Coin> = self.rt
+            let distant_amounts: Vec<Coin> = self
+                .remote
+                .clone()
+                .unwrap()
+                .rt
                 .block_on(querier.balance(account, None))
                 .map(|result| {
                     result

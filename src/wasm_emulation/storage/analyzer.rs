@@ -1,15 +1,13 @@
 use crate::prefixed_storage::decode_length;
 use crate::prefixed_storage::to_length_prefixed;
 use crate::prefixed_storage::CONTRACT_STORAGE_PREFIX;
-use crate::wasm_emulation::channel::get_channel;
-use crate::wasm_emulation::channel::get_rt_and_channel;
+use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::input::get_querier_storage;
 use cosmwasm_std::Addr;
 use cosmwasm_std::Coin;
 use cw_orch_daemon::queriers::CosmWasm;
 use cw_orch_daemon::queriers::DaemonQuerier;
 use cw_utils::NativeBalance;
-use ibc_chain_registry::chain::ChainData;
 use rustc_serialize::json::Json;
 use serde::Serialize;
 use serde::__private::from_utf8_lossy;
@@ -30,14 +28,14 @@ pub struct SerializableCoin {
 
 pub struct StorageAnalyzer {
     pub storage: QuerierStorage,
-    pub chain: ChainData,
+    pub remote: RemoteChannel,
 }
 
 impl StorageAnalyzer {
-    pub fn new(app: &App, c: impl Into<ChainData>) -> AnyResult<Self> {
+    pub fn new(app: &App) -> AnyResult<Self> {
         Ok(Self {
             storage: get_querier_storage(&app.wrap())?,
-            chain: c.into(),
+            remote: app.remote.clone(),
         })
     }
 
@@ -115,13 +113,14 @@ impl StorageAnalyzer {
     }
 
     pub fn compare_all_readable_contract_storage(&self) {
-        let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
-        let wasm_querier = CosmWasm::new(channel);
+        let wasm_querier = CosmWasm::new(self.remote.channel.clone());
         self.all_contract_storage()
             .into_iter()
             .for_each(|(contract_addr, key, value)| {
                 // We look for the data at that key on the contract
-                let distant_data = rt
+                let distant_data = self
+                    .remote
+                    .rt
                     .block_on(wasm_querier.contract_raw_state(contract_addr.clone(), key.clone()));
 
                 if let Ok(data) = distant_data {
@@ -199,13 +198,15 @@ impl StorageAnalyzer {
     }
 
     pub fn compare_all_balances(&self) {
-        let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
-        let bank_querier = cw_orch_daemon::queriers::Bank::new(channel);
+        let bank_querier = cw_orch_daemon::queriers::Bank::new(self.remote.channel.clone());
         self.get_all_local_balances()
             .into_iter()
             .for_each(|(addr, balances)| {
                 // We look for the data at that key on the contract
-                let distant_data = rt.block_on(bank_querier.balance(addr.clone(), None));
+                let distant_data = self
+                    .remote
+                    .rt
+                    .block_on(bank_querier.balance(addr.clone(), None));
 
                 if let Ok(data) = distant_data {
                     let distant_coins: Vec<Coin> = data

@@ -1,22 +1,30 @@
-use crate::wasm_emulation::input::SerChainData;
 use anyhow::Result as AnyResult;
 use cw_orch_daemon::GrpcChannel;
-use tokio::runtime::Runtime;
+use ibc_chain_registry::chain::ChainData;
+use tokio::runtime::{Handle, Runtime};
 use tonic::transport::Channel;
 
-pub fn get_rt_and_channel(chain: impl Into<SerChainData>) -> AnyResult<(Runtime, Channel)> {
-    let rt = Runtime::new()?;
+fn get_channel(chain: impl Into<ChainData>, rt: Handle) -> AnyResult<Channel> {
     let chain = chain.into();
-    // We create an instance from a code_id, an address, and we run the code in it
     let channel = rt.block_on(GrpcChannel::connect(&chain.apis.grpc, &chain.chain_id))?;
-
-    Ok((rt, channel))
+    Ok(channel)
 }
 
-pub fn get_channel(chain: impl Into<SerChainData>, rt: &Runtime) -> AnyResult<Channel> {
-    let chain = chain.into();
-    // We create an instance from a code_id, an address, and we run the code in it
-    let channel = rt.block_on(GrpcChannel::connect(&chain.apis.grpc, &chain.chain_id))?;
+#[derive(Clone)]
+pub struct RemoteChannel {
+    pub rt: Handle,
+    pub channel: Channel,
+    pub chain: ChainData,
+}
 
-    Ok(channel)
+impl RemoteChannel {
+    pub fn new(rt: &Runtime, chain: impl Into<ChainData>) -> AnyResult<Self> {
+        let chain = chain.into();
+        let channel = get_channel(chain.clone(), rt.handle().clone())?;
+        Ok(Self {
+            rt: rt.handle().clone(),
+            channel,
+            chain,
+        })
+    }
 }

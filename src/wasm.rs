@@ -1,11 +1,9 @@
 use crate::prefixed_storage::contract_namespace;
 use crate::wasm_emulation::api::RealApi;
+use crate::wasm_emulation::channel::RemoteChannel;
 use cosmwasm_std::CustomMsg;
 use cw_orch_daemon::queriers::CosmWasm;
 use cw_orch_daemon::queriers::DaemonQuerier;
-
-use ibc_chain_registry::chain::ChainData;
-use tokio::runtime::Runtime;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -36,9 +34,8 @@ use anyhow::{bail, Context, Result as AnyResult};
 #[cfg(feature = "cosmwasm_1_2")]
 use sha2::{Digest, Sha256};
 
-use crate::wasm_emulation::channel::get_channel;
 use crate::wasm_emulation::contract::WasmContract;
-use crate::wasm_emulation::input::{SerChainData, WasmStorage};
+use crate::wasm_emulation::input::WasmStorage;
 use crate::wasm_emulation::query::AllQuerier;
 
 // Contract state is kept in Storage, separate from the contracts themselves
@@ -141,8 +138,7 @@ pub struct WasmKeeper<ExecC, QueryC> {
     generator: Box<dyn AddressGenerator>,
 
     // chain on which the contract should be queried/tested against
-    chain: Option<ChainData>,
-    rt: Runtime
+    remote: Option<RemoteChannel>,
 }
 
 pub trait AddressGenerator {
@@ -176,8 +172,7 @@ impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
             _e: std::marker::PhantomData,
             _q: std::marker::PhantomData,
             generator: Box::new(SimpleAddressGenerator()),
-            chain: None,
-            rt: Runtime::new().unwrap()
+            remote: None,
         }
     }
 }
@@ -355,26 +350,19 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
             if let Some(code) = code {
                 return code.clone();
             } else {
-                return WasmContract::new_distant_code_id(
-                    handler.code_id.try_into().unwrap(),
-                    self.chain.clone().unwrap(),
-                );
+                return WasmContract::new_distant_code_id(handler.code_id);
             }
         }
 
-        WasmContract::new_distant_contract(address.to_string(), self.chain.clone().unwrap())
+        WasmContract::new_distant_contract(address.to_string())
     }
 
-    pub fn load_distant_contract(
-        chain: impl Into<SerChainData>,
-        address: &Addr,
-        rt: &Runtime
-    ) -> AnyResult<ContractData> {
-        let channel = get_channel(chain, &rt)?;
+    pub fn load_distant_contract(remote: RemoteChannel, address: &Addr) -> AnyResult<ContractData> {
+        let wasm_querier = CosmWasm::new(remote.channel);
 
-        let wasm_querier = CosmWasm::new(channel);
-
-        let code_info = rt.block_on(wasm_querier.contract_info(address.clone()))?;
+        let code_info = remote
+            .rt
+            .block_on(wasm_querier.contract_info(address.clone()))?;
 
         Ok(ContractData {
             admin: {
@@ -383,7 +371,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
                     a => Some(Addr::unchecked(a)),
                 }
             },
-            code_id: code_info.code_id.try_into()?,
+            code_id: code_info.code_id,
             created: code_info.created.unwrap().block_height,
             creator: Addr::unchecked(code_info.creator),
             label: code_info.label,
@@ -396,7 +384,8 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
             return Ok(local_contract);
         }
 
-        Self::load_distant_contract(self.chain.clone().unwrap(), address, &self.rt)
+        let remote_channel = self.remote.clone().unwrap();
+        Self::load_distant_contract(remote_channel, address)
     }
 
     pub fn dump_wasm_raw(&self, storage: &dyn Storage, address: &Addr) -> Vec<Record> {
@@ -484,8 +473,8 @@ where
         }
     }
 
-    pub fn set_chain(&mut self, chain: ChainData) {
-        self.chain = Some(chain);
+    pub fn set_remote(&mut self, remote: RemoteChannel) {
+        self.remote = Some(remote);
     }
 
     pub fn query_smart(
@@ -504,7 +493,13 @@ where
             block,
             address,
             |handler, deps, env| {
-                <WasmContract as Contract<ExecC, QueryC>>::query(&handler, deps, env, msg)
+                <WasmContract as Contract<ExecC, QueryC>>::query(
+                    &handler,
+                    deps,
+                    env,
+                    msg,
+                    self.remote.clone().unwrap(),
+                )
             },
         )
     }
@@ -896,7 +891,7 @@ where
     ) -> AnyResult<Addr> {
         let addr = self
             .generator
-            .next_contract_address(storage, self.chain.clone().map(|c| c.bech32_prefix));
+            .next_contract_address(storage, self.remote.clone().map(|c| c.chain.bech32_prefix));
 
         let info = ContractData {
             code_id,
@@ -925,7 +920,9 @@ where
             router,
             block,
             address,
-            |contract, deps, env| contract.execute(deps, env, info, msg),
+            |contract, deps, env| {
+                contract.execute(deps, env, info, msg, self.remote.clone().unwrap())
+            },
         )?)
     }
 
@@ -945,7 +942,9 @@ where
             router,
             block,
             address,
-            |contract, deps, env| contract.instantiate(deps, env, info, msg),
+            |contract, deps, env| {
+                contract.instantiate(deps, env, info, msg, self.remote.clone().unwrap())
+            },
         )?)
     }
 
@@ -964,7 +963,7 @@ where
             router,
             block,
             address,
-            |contract, deps, env| contract.reply(deps, env, reply),
+            |contract, deps, env| contract.reply(deps, env, reply, self.remote.clone().unwrap()),
         )?)
     }
 
@@ -983,7 +982,7 @@ where
             router,
             block,
             address,
-            |contract, deps, env| contract.sudo(deps, env, msg),
+            |contract, deps, env| contract.sudo(deps, env, msg, self.remote.clone().unwrap()),
         )?)
     }
 
@@ -1002,7 +1001,7 @@ where
             router,
             block,
             address,
-            |contract, deps, env| contract.migrate(deps, env, msg),
+            |contract, deps, env| contract.migrate(deps, env, msg, self.remote.clone().unwrap()),
         )?)
     }
 

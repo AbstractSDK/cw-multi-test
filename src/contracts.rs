@@ -11,6 +11,8 @@ use cosmwasm_std::{
 
 use anyhow::{anyhow, bail, Result as AnyResult};
 
+use crate::wasm_emulation::channel::RemoteChannel;
+
 /// Interface to call into a [Contract].
 pub trait Contract<T, Q = Empty>
 where
@@ -23,6 +25,7 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<T>>;
 
     fn instantiate(
@@ -31,28 +34,63 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<T>>;
 
-    fn query(&self, deps: Deps<Q>, env: Env, msg: Vec<u8>) -> AnyResult<Binary>;
+    fn query(
+        &self,
+        deps: Deps<Q>,
+        env: Env,
+        msg: Vec<u8>,
+        remote: RemoteChannel,
+    ) -> AnyResult<Binary>;
 
-    fn sudo(&self, deps: DepsMut<Q>, env: Env, msg: Vec<u8>) -> AnyResult<Response<T>>;
+    fn sudo(
+        &self,
+        deps: DepsMut<Q>,
+        env: Env,
+        msg: Vec<u8>,
+        remote: RemoteChannel,
+    ) -> AnyResult<Response<T>>;
 
-    fn reply(&self, deps: DepsMut<Q>, env: Env, msg: Reply) -> AnyResult<Response<T>>;
+    fn reply(
+        &self,
+        deps: DepsMut<Q>,
+        env: Env,
+        msg: Reply,
+        remote: RemoteChannel,
+    ) -> AnyResult<Response<T>>;
 
-    fn migrate(&self, deps: DepsMut<Q>, env: Env, msg: Vec<u8>) -> AnyResult<Response<T>>;
+    fn migrate(
+        &self,
+        deps: DepsMut<Q>,
+        env: Env,
+        msg: Vec<u8>,
+        remote: RemoteChannel,
+    ) -> AnyResult<Response<T>>;
 }
 
-type ContractFn<T, C, E, Q> =
-    fn(deps: DepsMut<Q>, env: Env, info: MessageInfo, msg: T) -> Result<Response<C>, E>;
-type PermissionedFn<T, C, E, Q> = fn(deps: DepsMut<Q>, env: Env, msg: T) -> Result<Response<C>, E>;
-type ReplyFn<C, E, Q> = fn(deps: DepsMut<Q>, env: Env, msg: Reply) -> Result<Response<C>, E>;
-type QueryFn<T, E, Q> = fn(deps: Deps<Q>, env: Env, msg: T) -> Result<Binary, E>;
+type ContractFn<T, C, E, Q> = fn(
+    deps: DepsMut<Q>,
+    env: Env,
+    info: MessageInfo,
+    msg: T,
+    remote: RemoteChannel,
+) -> Result<Response<C>, E>;
+type PermissionedFn<T, C, E, Q> =
+    fn(deps: DepsMut<Q>, env: Env, msg: T, remote: RemoteChannel) -> Result<Response<C>, E>;
+type ReplyFn<C, E, Q> =
+    fn(deps: DepsMut<Q>, env: Env, msg: Reply, remote: RemoteChannel) -> Result<Response<C>, E>;
+type QueryFn<T, E, Q> =
+    fn(deps: Deps<Q>, env: Env, msg: T, remote: RemoteChannel) -> Result<Binary, E>;
 
 type ContractClosure<T, C, E, Q> =
-    Box<dyn Fn(DepsMut<Q>, Env, MessageInfo, T) -> Result<Response<C>, E>>;
-type PermissionedClosure<T, C, E, Q> = Box<dyn Fn(DepsMut<Q>, Env, T) -> Result<Response<C>, E>>;
-type ReplyClosure<C, E, Q> = Box<dyn Fn(DepsMut<Q>, Env, Reply) -> Result<Response<C>, E>>;
-type QueryClosure<T, E, Q> = Box<dyn Fn(Deps<Q>, Env, T) -> Result<Binary, E>>;
+    Box<dyn Fn(DepsMut<Q>, Env, MessageInfo, T, RemoteChannel) -> Result<Response<C>, E>>;
+type PermissionedClosure<T, C, E, Q> =
+    Box<dyn Fn(DepsMut<Q>, Env, T, RemoteChannel) -> Result<Response<C>, E>>;
+type ReplyClosure<C, E, Q> =
+    Box<dyn Fn(DepsMut<Q>, Env, Reply, RemoteChannel) -> Result<Response<C>, E>>;
+type QueryClosure<T, E, Q> = Box<dyn Fn(Deps<Q>, Env, T, RemoteChannel) -> Result<Binary, E>>;
 
 /// Wraps the exported functions from a contract and provides the normalized format
 /// Place T4 and E4 at the end, as we just want default placeholders for most contracts that don't have sudo
@@ -272,10 +310,11 @@ where
     let customized = move |mut deps: DepsMut<Q>,
                            env: Env,
                            info: MessageInfo,
-                           msg: T|
+                           msg: T,
+                           remote: RemoteChannel|
           -> Result<Response<C>, E> {
         let deps = decustomize_deps_mut(&mut deps);
-        raw_fn(deps, env, info, msg).map(customize_response::<C>)
+        raw_fn(deps, env, info, msg, remote).map(customize_response::<C>)
     };
     Box::new(customized)
 }
@@ -286,10 +325,11 @@ where
     E: Display + Debug + Send + Sync + 'static,
     Q: CustomQuery + DeserializeOwned + 'static,
 {
-    let customized = move |deps: Deps<Q>, env: Env, msg: T| -> Result<Binary, E> {
-        let deps = decustomize_deps(&deps);
-        raw_fn(deps, env, msg)
-    };
+    let customized =
+        move |deps: Deps<Q>, env: Env, msg: T, remote: RemoteChannel| -> Result<Binary, E> {
+            let deps = decustomize_deps(&deps);
+            raw_fn(deps, env, msg, remote)
+        };
     Box::new(customized)
 }
 
@@ -324,8 +364,12 @@ where
     C: Clone + fmt::Debug + PartialEq + JsonSchema + 'static,
     Q: CustomQuery + DeserializeOwned + 'static,
 {
-    let customized = move |deps: DepsMut<Q>, env: Env, msg: T| -> Result<Response<C>, E> {
-        raw_fn(deps, env, msg).map(customize_response::<C>)
+    let customized = move |deps: DepsMut<Q>,
+                           env: Env,
+                           msg: T,
+                           remote: RemoteChannel|
+          -> Result<Response<C>, E> {
+        raw_fn(deps, env, msg, remote).map(customize_response::<C>)
     };
     Box::new(customized)
 }
@@ -388,9 +432,10 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<C>> {
         let msg: T1 = from_slice(&msg)?;
-        (self.execute_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
+        (self.execute_fn)(deps, env, info, msg, remote).map_err(|err| anyhow!(err))
     }
 
     fn instantiate(
@@ -399,38 +444,63 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
+        remote: RemoteChannel,
     ) -> AnyResult<Response<C>> {
         let msg: T2 = from_slice(&msg)?;
-        (self.instantiate_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
+        (self.instantiate_fn)(deps, env, info, msg, remote).map_err(|err| anyhow!(err))
     }
 
-    fn query(&self, deps: Deps<Q>, env: Env, msg: Vec<u8>) -> AnyResult<Binary> {
+    fn query(
+        &self,
+        deps: Deps<Q>,
+        env: Env,
+        msg: Vec<u8>,
+        remote: RemoteChannel,
+    ) -> AnyResult<Binary> {
         let msg: T3 = from_slice(&msg)?;
-        (self.query_fn)(deps, env, msg).map_err(|err| anyhow!(err))
+        (self.query_fn)(deps, env, msg, remote).map_err(|err| anyhow!(err))
     }
 
     // this returns an error if the contract doesn't implement sudo
-    fn sudo(&self, deps: DepsMut<Q>, env: Env, msg: Vec<u8>) -> AnyResult<Response<C>> {
+    fn sudo(
+        &self,
+        deps: DepsMut<Q>,
+        env: Env,
+        msg: Vec<u8>,
+        remote: RemoteChannel,
+    ) -> AnyResult<Response<C>> {
         let msg = from_slice(&msg)?;
         match &self.sudo_fn {
-            Some(sudo) => sudo(deps, env, msg).map_err(|err| anyhow!(err)),
+            Some(sudo) => sudo(deps, env, msg, remote).map_err(|err| anyhow!(err)),
             None => bail!("sudo not implemented for contract"),
         }
     }
 
     // this returns an error if the contract doesn't implement reply
-    fn reply(&self, deps: DepsMut<Q>, env: Env, reply_data: Reply) -> AnyResult<Response<C>> {
+    fn reply(
+        &self,
+        deps: DepsMut<Q>,
+        env: Env,
+        reply_data: Reply,
+        remote: RemoteChannel,
+    ) -> AnyResult<Response<C>> {
         match &self.reply_fn {
-            Some(reply) => reply(deps, env, reply_data).map_err(|err| anyhow!(err)),
+            Some(reply) => reply(deps, env, reply_data, remote).map_err(|err| anyhow!(err)),
             None => bail!("reply not implemented for contract"),
         }
     }
 
     // this returns an error if the contract doesn't implement migrate
-    fn migrate(&self, deps: DepsMut<Q>, env: Env, msg: Vec<u8>) -> AnyResult<Response<C>> {
+    fn migrate(
+        &self,
+        deps: DepsMut<Q>,
+        env: Env,
+        msg: Vec<u8>,
+        remote: RemoteChannel,
+    ) -> AnyResult<Response<C>> {
         let msg = from_slice(&msg)?;
         match &self.migrate_fn {
-            Some(migrate) => migrate(deps, env, msg).map_err(|err| anyhow!(err)),
+            Some(migrate) => migrate(deps, env, msg, remote).map_err(|err| anyhow!(err)),
             None => bail!("migrate not implemented for contract"),
         }
     }

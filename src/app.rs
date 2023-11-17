@@ -1,7 +1,7 @@
 use crate::wasm_emulation::api::RealApi;
+use crate::wasm_emulation::channel::RemoteChannel;
 use cosmwasm_std::CustomMsg;
 use cw_storage_plus::Item;
-use ibc_chain_registry::chain::ChainData;
 
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -68,25 +68,12 @@ pub struct App<
     api: Api,
     storage: Storage,
     block: BlockInfo,
-    pub chain: Option<ChainData>,
-}
-
-fn no_init<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>(
-    _: &mut Router<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>,
-    _: &dyn Api,
-    _: &mut dyn Storage,
-) {
-}
-
-impl Default for BasicApp {
-    fn default() -> Self {
-        Self::new(no_init)
-    }
+    pub remote: RemoteChannel,
 }
 
 impl BasicApp {
     /// Creates new default `App` implementation working with Empty custom messages.
-    pub fn new<F>(init_fn: F) -> Self
+    pub fn new<F>(remote: RemoteChannel, init_fn: F) -> AnyResult<Self>
     where
         F: FnOnce(
             &mut Router<
@@ -102,13 +89,16 @@ impl BasicApp {
             &mut dyn Storage,
         ),
     {
-        AppBuilder::new().build(init_fn)
+        AppBuilder::new().with_remote(remote).build(init_fn)
     }
 }
 
 /// Creates new default `App` implementation working with customized exec and query messages.
 /// Outside of `App` implementation to make type elision better.
-pub fn custom_app<ExecC, QueryC, F>(init_fn: F) -> BasicApp<ExecC, QueryC>
+pub fn custom_app<ExecC, QueryC, F>(
+    remote: RemoteChannel,
+    init_fn: F,
+) -> AnyResult<BasicApp<ExecC, QueryC>>
 where
     ExecC: CustomMsg + DeserializeOwned + 'static,
     QueryC: Debug + CustomQuery + DeserializeOwned + 'static,
@@ -126,7 +116,7 @@ where
         &mut dyn Storage,
     ),
 {
-    AppBuilder::new_custom().build(init_fn)
+    AppBuilder::new_custom().with_remote(remote).build(init_fn)
 }
 
 impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> Querier
@@ -199,7 +189,7 @@ pub struct AppBuilder<Bank, Api, Storage, Custom, Wasm, Staking, Distr, Ibc, Gov
     distribution: Distr,
     ibc: Ibc,
     gov: Gov,
-    chain: Option<ChainData>,
+    remote: Option<RemoteChannel>,
 }
 
 impl Default
@@ -246,7 +236,7 @@ impl
             distribution: DistributionKeeper::new(),
             ibc: FailingModule::new(),
             gov: FailingModule::new(),
-            chain: None,
+            remote: None,
         }
     }
 }
@@ -281,7 +271,7 @@ where
             distribution: DistributionKeeper::new(),
             ibc: FailingModule::new(),
             gov: FailingModule::new(),
-            chain: None,
+            remote: None,
         }
     }
 }
@@ -312,7 +302,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -327,7 +317,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -346,7 +336,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -361,7 +351,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -380,7 +370,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -395,7 +385,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -414,7 +404,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -429,7 +419,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -456,7 +446,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -471,7 +461,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -490,7 +480,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -505,7 +495,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -525,7 +515,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             bank,
             ibc,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -540,7 +530,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -562,7 +552,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             bank,
             distribution,
             gov,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -577,7 +567,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
 
@@ -596,7 +586,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             bank,
             distribution,
             ibc,
-            chain,
+            remote,
             ..
         } = self;
 
@@ -611,13 +601,13 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             distribution,
             ibc,
             gov,
-            chain,
+            remote,
         }
     }
     /// Sets the chain of the app
-    pub fn with_chain(
+    pub fn with_remote(
         self,
-        chain: ChainData,
+        remote: RemoteChannel,
     ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
         let AppBuilder {
             wasm,
@@ -643,7 +633,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             staking,
             distribution,
             ibc,
-            chain: Some(chain),
+            remote: Some(remote),
             gov,
         }
     }
@@ -660,7 +650,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
     pub fn build<F>(
         self,
         init_fn: F,
-    ) -> App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
+    ) -> AnyResult<App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>>
     where
         BankT: Bank,
         ApiT: Api,
@@ -692,10 +682,10 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
             api: self.api,
             block: self.block,
             storage: self.storage,
-            chain: self.chain,
+            remote: self.remote.unwrap(),
         };
         app.init_modules(init_fn);
-        app
+        Ok(app)
     }
 }
 
@@ -884,12 +874,14 @@ where
 
     /// Returns a new account address
     pub fn next_address(&mut self) -> Addr {
-        let Self { storage, chain, .. } = self;
+        let Self {
+            storage, remote, ..
+        } = self;
 
         let mut addresses = ADDRESSES.may_load(storage).unwrap().unwrap_or(vec![]);
 
         let new_address =
-            RealApi::new(&chain.clone().unwrap().bech32_prefix).next_address(addresses.len());
+            RealApi::new(&remote.chain.bech32_prefix.clone()).next_address(addresses.len());
         addresses.push(new_address.clone());
         ADDRESSES.save(storage, &addresses).unwrap();
 

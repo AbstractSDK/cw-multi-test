@@ -1,5 +1,4 @@
-use crate::wasm_emulation::channel::get_rt_and_channel;
-use crate::wasm_emulation::input::SerChainData;
+use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::storage::mock_storage::{GAS_COST_LAST_ITERATION, GAS_COST_RANGE};
 
 use super::mock_storage::MockStorage;
@@ -67,14 +66,14 @@ struct Iter {
 pub struct DualStorage {
     pub local_storage: MockStorage,
     pub removed_keys: HashSet<Vec<u8>>,
-    pub chain: SerChainData,
+    pub remote: RemoteChannel,
     pub contract_addr: String,
     iterators: HashMap<u32, Iter>,
 }
 
 impl DualStorage {
     pub fn new(
-        chain: impl Into<SerChainData>,
+        remote: RemoteChannel,
         contract_addr: String,
         init: Option<Vec<(Vec<u8>, Vec<u8>)>>,
     ) -> AnyResult<DualStorage> {
@@ -87,7 +86,7 @@ impl DualStorage {
 
         Ok(Self {
             local_storage,
-            chain: chain.into(),
+            remote,
             removed_keys: HashSet::default(),
             contract_addr,
             iterators: HashMap::new(),
@@ -108,10 +107,9 @@ impl Storage for DualStorage {
         let (mut value, gas_info) = self.local_storage.get(key);
         // If it's not available, we query it online if it was not removed locally
         if !self.removed_keys.contains(key) && value.as_ref().unwrap().is_none() {
-            let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
-            let wasm_querier = CosmWasm::new(channel);
+            let wasm_querier = CosmWasm::new(self.remote.channel.clone());
 
-            let distant_result = rt.block_on(
+            let distant_result = self.remote.rt.block_on(
                 wasm_querier.contract_raw_state(self.contract_addr.clone(), key.to_vec()),
             );
 
@@ -181,9 +179,10 @@ impl Storage for DualStorage {
         if iterator.distant_iter.position == iterator.distant_iter.data.len()
             && iterator.distant_iter.key.is_some()
         {
-            let (rt, channel) = get_rt_and_channel(self.chain.clone()).unwrap();
-            let wasm_querier = CosmWasm::new(channel);
-            let new_keys = rt
+            let wasm_querier = CosmWasm::new(self.remote.channel.clone());
+            let new_keys = self
+                .remote
+                .rt
                 .block_on(wasm_querier.all_contract_state(
                     self.contract_addr.clone(),
                     Some(PageRequest {

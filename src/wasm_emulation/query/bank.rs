@@ -1,9 +1,8 @@
-use crate::wasm_emulation::input::SerChainData;
+use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::query::gas::{GAS_COST_ALL_BALANCE_QUERY, GAS_COST_BALANCE_QUERY};
 use crate::wasm_emulation::query::mock_querier::QueryResultWithGas;
 use cosmwasm_std::Addr;
 use cosmwasm_vm::GasInfo;
-use tokio::runtime::Runtime;
 use std::str::FromStr;
 
 use cw_orch_daemon::queriers::DaemonQuerier;
@@ -21,8 +20,6 @@ use cosmwasm_std::{AllBalanceResponse, BalanceResponse, BankQuery};
 use cosmwasm_std::to_binary;
 use cosmwasm_std::{ContractResult, SystemResult};
 
-use crate::wasm_emulation::channel::get_channel;
-
 #[derive(Clone)]
 pub struct BankQuerier {
     #[allow(dead_code)]
@@ -30,12 +27,11 @@ pub struct BankQuerier {
     supplies: HashMap<String, Uint128>,
     /// HashMap<address, coins>
     balances: HashMap<String, Vec<Coin>>,
-    chain: SerChainData,
+    remote: RemoteChannel,
 }
 
 impl BankQuerier {
-    pub fn new(chain: impl Into<SerChainData>, init: Option<Vec<(Addr, NativeBalance)>>) -> Self {
-        let chain = chain.into();
+    pub fn new(remote: RemoteChannel, init: Option<Vec<(Addr, NativeBalance)>>) -> Self {
         let balances: HashMap<_, _> = init
             .unwrap_or(vec![])
             .iter()
@@ -45,7 +41,7 @@ impl BankQuerier {
         BankQuerier {
             supplies: Self::calculate_supplies(&balances),
             balances,
-            chain,
+            remote,
         }
     }
 
@@ -74,7 +70,7 @@ impl BankQuerier {
         supplies
     }
 
-    pub fn query(&self, rt: &Runtime, request: &BankQuery) -> QueryResultWithGas {
+    pub fn query(&self, request: &BankQuery) -> QueryResultWithGas {
         let contract_result: ContractResult<Binary> = match request {
             BankQuery::Balance { address, denom } => {
                 // proper error on not found, serialize result on found
@@ -85,10 +81,11 @@ impl BankQuerier {
 
                 // If the amount is not available, we query it from the distant chain
                 if amount.is_none() {
-                    let channel = get_channel(self.chain.clone(), &rt).unwrap();
-                    let querier = Bank::new(channel);
+                    let querier = Bank::new(self.remote.channel.clone());
 
-                    let query_result = rt
+                    let query_result = self
+                        .remote
+                        .rt
                         .block_on(querier.balance(address, Some(denom.clone())))
                         .map(|result| Uint128::from_str(&result[0].amount).unwrap());
 
@@ -111,10 +108,12 @@ impl BankQuerier {
 
                 // We query only if the bank balance doesn't exist
                 if amount.is_none() {
-                    let channel = get_channel(self.chain.clone(), rt).unwrap();
-                    let querier = Bank::new(channel);
-                    let query_result: Result<Vec<Coin>, _> =
-                        rt.block_on(querier.balance(address, None)).map(|result| {
+                    let querier = Bank::new(self.remote.channel.clone());
+                    let query_result: Result<Vec<Coin>, _> = self
+                        .remote
+                        .rt
+                        .block_on(querier.balance(address, None))
+                        .map(|result| {
                             result
                                 .into_iter()
                                 .map(|c| Coin {

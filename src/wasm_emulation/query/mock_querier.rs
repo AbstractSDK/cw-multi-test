@@ -1,4 +1,4 @@
-use crate::wasm_emulation::input::SerChainData;
+use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::query::bank::BankQuerier;
 use crate::wasm_emulation::query::staking::StakingQuerier;
 use crate::wasm_emulation::query::wasm::WasmQuerier;
@@ -20,7 +20,6 @@ use cosmwasm_std::{FullDelegation, Validator};
 
 use cosmwasm_std::Attribute;
 use cosmwasm_std::QuerierResult;
-use tokio::runtime::Runtime;
 
 use crate::wasm_emulation::input::QuerierStorage;
 
@@ -44,20 +43,19 @@ pub struct MockQuerier<C: DeserializeOwned = Empty> {
     ///
     /// Use box to avoid the need of another generic type
     custom_handler: Box<dyn for<'a> Fn(&'a C) -> QueryResultWithGas>,
-    rt: Runtime
+    remote: RemoteChannel,
 }
 
 impl<C: DeserializeOwned> MockQuerier<C> {
-    pub fn new(chain: impl Into<SerChainData>, storage: Option<QuerierStorage>) -> Self {
-        let chain = chain.into();
+    pub fn new(remote: RemoteChannel, storage: Option<QuerierStorage>) -> Self {
         MockQuerier {
             bank: BankQuerier::new(
-                chain.clone(),
+                remote.clone(),
                 storage.as_ref().map(|storage| storage.bank.storage.clone()),
             ),
 
             staking: StakingQuerier::default(),
-            wasm: WasmQuerier::new(chain, storage),
+            wasm: WasmQuerier::new(remote.clone(), storage),
             // strange argument notation suggested as a workaround here: https://github.com/rust-lang/rust/issues/41078#issuecomment-294296365
             custom_handler: Box::from(|_: &_| -> QueryResultWithGas {
                 (
@@ -67,7 +65,7 @@ impl<C: DeserializeOwned> MockQuerier<C> {
                     GasInfo::free(),
                 )
             }),
-            rt: Runtime::new().unwrap()
+            remote,
         }
     }
 
@@ -125,11 +123,11 @@ impl<C: CustomQuery + DeserializeOwned> cosmwasm_vm::Querier for MockQuerier<C> 
 impl<C: CustomQuery + DeserializeOwned> MockQuerier<C> {
     pub fn handle_query(&self, request: &QueryRequest<C>) -> QueryResultWithGas {
         match &request {
-            QueryRequest::Bank(bank_query) => self.bank.query(&self.rt, bank_query),
+            QueryRequest::Bank(bank_query) => self.bank.query(bank_query),
             QueryRequest::Custom(custom_query) => (*self.custom_handler)(custom_query),
 
             QueryRequest::Staking(staking_query) => self.staking.query(staking_query),
-            QueryRequest::Wasm(msg) => self.wasm.query(&self.rt, msg),
+            QueryRequest::Wasm(msg) => self.wasm.query(self.remote.clone(), msg),
             QueryRequest::Stargate { .. } => (
                 SystemResult::Err(SystemError::UnsupportedRequest {
                     kind: "Stargate".to_string(),
