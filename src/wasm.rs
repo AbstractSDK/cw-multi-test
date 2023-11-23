@@ -236,13 +236,24 @@ where
             }
             #[cfg(feature = "cosmwasm_1_2")]
             WasmQuery::CodeInfo { code_id } => {
-                let code_data = self.code_data(code_id)?;
+                let code_data = self.code_data(code_id);
                 let mut res = cosmwasm_std::CodeInfoResponse::default();
-                res.code_id = code_id;
-                res.creator = code_data.creator.to_string();
-                res.checksum = cosmwasm_std::HexBinary::from(
-                    Sha256::digest(format!("contract code {}", code_data.seed)).to_vec(),
-                );
+                if let Ok(code_data) = code_data {
+                    res.code_id = code_id;
+                    res.creator = code_data.creator.to_string();
+                    res.checksum = cosmwasm_std::HexBinary::from(
+                        Sha256::digest(format!("contract code {}", code_data.seed)).to_vec(),
+                    );
+                } else {
+                    // Remote case
+                    let remote = self.remote.clone().unwrap();
+                    let wasm_querier = CosmWasm::new(remote.channel);
+
+                    let code_info = remote.rt.block_on(wasm_querier.code(code_id))?;
+                    res.code_id = code_id;
+                    res.creator = code_info.creator.to_string();
+                    res.checksum = code_info.data_hash.into();
+                };
                 to_binary(&res).map_err(Into::into)
             }
             other => bail!(Error::UnsupportedWasmQuery(other)),
