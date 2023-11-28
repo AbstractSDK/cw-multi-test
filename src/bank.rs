@@ -1,6 +1,4 @@
-use crate::wasm_emulation::input::BankStorage;
-use cw_orch_daemon::queriers::DaemonQuerier;
-use std::str::FromStr;
+use crate::queries::bank::BankRemoteQuerier;
 
 use anyhow::{bail, Result as AnyResult};
 use itertools::Itertools;
@@ -21,7 +19,7 @@ use crate::prefixed_storage::{prefixed, prefixed_read};
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::query::AllQuerier;
 
-const BALANCES: Map<&Addr, NativeBalance> = Map::new("balances");
+pub(crate) const BALANCES: Map<&Addr, NativeBalance> = Map::new("balances");
 
 pub const NAMESPACE_BANK: &[u8] = b"bank";
 
@@ -77,25 +75,7 @@ impl BankKeeper {
     fn get_balance(&self, bank_storage: &dyn Storage, account: &Addr) -> AnyResult<Vec<Coin>> {
         // If there is no balance present, we query it on the distant chain
         if !BALANCES.has(bank_storage, account) {
-            let channel = self.remote.clone().unwrap().channel;
-            let querier = cw_orch_daemon::queriers::Bank::new(channel);
-            let distant_amounts: Vec<Coin> = self
-                .remote
-                .clone()
-                .unwrap()
-                .rt
-                .block_on(querier.balance(account, None))
-                .map(|result| {
-                    result
-                        .into_iter()
-                        .map(|c| Coin {
-                            amount: Uint128::from_str(&c.amount).unwrap(),
-                            denom: c.denom,
-                        })
-                        .collect()
-                })
-                .unwrap();
-            Ok(distant_amounts)
+            BankRemoteQuerier::get_balance(self.remote.clone().unwrap(), account)
         } else {
             let val = BALANCES.may_load(bank_storage, account)?;
             Ok(val.unwrap_or_default().into_vec())
@@ -174,17 +154,6 @@ fn coins_to_string(coins: &[Coin]) -> String {
 }
 
 impl Bank for BankKeeper {}
-
-impl AllQuerier for BankKeeper {
-    type Output = BankStorage;
-    fn query_all(&self, storage: &dyn Storage) -> AnyResult<BankStorage> {
-        let bank_storage = prefixed_read(storage, NAMESPACE_BANK);
-        let balances: Result<Vec<_>, _> = BALANCES
-            .range(&bank_storage, None, None, Order::Ascending)
-            .collect();
-        Ok(BankStorage { storage: balances? })
-    }
-}
 
 impl Module for BankKeeper {
     type ExecT = BankMsg;

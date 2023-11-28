@@ -1,4 +1,5 @@
 use crate::prefixed_storage::get_full_contract_storage_namespace;
+use crate::queries::wasm::WasmRemoteQuerier;
 use crate::wasm_emulation::query::gas::{GAS_COST_CONTRACT_INFO, GAS_COST_RAW_COSMWASM_QUERY};
 use crate::wasm_emulation::query::mock_querier::QueryResultWithGas;
 
@@ -9,18 +10,15 @@ use crate::wasm_emulation::output::WasmOutput;
 use crate::wasm_emulation::output::WasmRunnerOutput;
 use cosmwasm_std::testing::mock_env;
 use cosmwasm_vm::GasInfo;
-use cw_orch_daemon::queriers::DaemonQuerier;
 
 use cosmwasm_std::{to_binary, Addr, ContractInfoResponse, SystemError, SystemResult};
 use cosmwasm_std::{ContractResult, Empty};
-use cw_orch_daemon::queriers::CosmWasm;
 
 use cosmwasm_std::WasmQuery;
 #[cfg(feature = "cosmwasm_1_2")]
 use sha2::{Digest, Sha256};
 
 use crate::wasm_emulation::channel::RemoteChannel;
-use crate::WasmKeeper;
 
 use crate::wasm_emulation::input::{InstanceArguments, QueryArgs};
 
@@ -46,8 +44,7 @@ impl WasmQuerier {
                 {
                     local_contract.clone()
                 } else {
-                    WasmKeeper::<Empty, Empty>::load_distant_contract(self.remote.clone(), &addr)
-                        .unwrap()
+                    WasmRemoteQuerier::load_distant_contract(self.remote.clone(), &addr).unwrap()
                 };
                 let mut response = ContractInfoResponse::default();
                 response.code_id = data.code_id;
@@ -73,15 +70,8 @@ impl WasmQuerier {
                 {
                     value.1.clone()
                 } else {
-                    let wasm_querier = CosmWasm::new(remote.channel);
-                    let query_result = remote
-                        .rt
-                        .block_on(
-                            wasm_querier
-                                .contract_raw_state(contract_addr.to_string(), key.to_vec()),
-                        )
-                        .map(|query_result| query_result.data);
-                    query_result.unwrap()
+                    WasmRemoteQuerier::raw_query(remote, contract_addr.clone(), key.clone())
+                        .unwrap()
                 };
 
                 (
@@ -154,22 +144,16 @@ impl WasmQuerier {
                     .wasm
                     .code_data
                     .get(&(*code_id as usize));
-                let mut res = cosmwasm_std::CodeInfoResponse::default();
-                if let Some(code_data) = code_data {
+                let res = if let Some(code_data) = code_data {
+                    let mut res = cosmwasm_std::CodeInfoResponse::default();
                     res.code_id = *code_id;
                     res.creator = code_data.creator.to_string();
                     res.checksum = cosmwasm_std::HexBinary::from(
                         Sha256::digest(format!("contract code {}", code_data.seed)).to_vec(),
                     );
+                    res
                 } else {
-                    // Remote case
-                    let remote = self.remote.clone();
-                    let wasm_querier = CosmWasm::new(remote.channel);
-
-                    let code_info = remote.rt.block_on(wasm_querier.code(*code_id)).unwrap();
-                    res.code_id = *code_id;
-                    res.creator = code_info.creator.to_string();
-                    res.checksum = code_info.data_hash.into();
+                    WasmRemoteQuerier::code_info(self.remote.clone(), *code_id).unwrap()
                 };
                 (
                     SystemResult::Ok(to_binary(&res).into()),

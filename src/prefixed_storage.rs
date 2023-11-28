@@ -5,7 +5,12 @@ use cosmwasm_std::Storage;
 #[cfg(feature = "iterator")]
 use cosmwasm_std::{Order, Record};
 
-pub use length_prefixed::*;
+use length_prefixed::to_length_prefixed_nested;
+pub use length_prefixed::{
+    contract_namespace, decode_length, get_full_contract_storage_namespace, to_length_prefixed,
+    CONTRACT_STORAGE_PREFIX,
+};
+
 #[cfg(feature = "iterator")]
 use namespace_helpers::range_with_prefix;
 use namespace_helpers::{get_with_prefix, remove_with_prefix, set_with_prefix};

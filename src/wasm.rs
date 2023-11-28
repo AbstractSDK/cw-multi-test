@@ -1,9 +1,8 @@
 use crate::prefixed_storage::contract_namespace;
+use crate::queries::wasm::WasmRemoteQuerier;
 use crate::wasm_emulation::api::RealApi;
 use crate::wasm_emulation::channel::RemoteChannel;
 use cosmwasm_std::CustomMsg;
-use cw_orch_daemon::queriers::CosmWasm;
-use cw_orch_daemon::queriers::DaemonQuerier;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -35,11 +34,10 @@ use anyhow::{bail, Context, Result as AnyResult};
 use sha2::{Digest, Sha256};
 
 use crate::wasm_emulation::contract::WasmContract;
-use crate::wasm_emulation::input::WasmStorage;
 use crate::wasm_emulation::query::AllQuerier;
 
 // Contract state is kept in Storage, separate from the contracts themselves
-const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
+pub(crate) const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
 
 pub const NAMESPACE_WASM: &[u8] = b"wasm";
 /// See <https://github.com/chipshort/wasmd/blob/d0e3ed19f041e65f112d8e800416b3230d0005a2/x/wasm/types/events.go#L58>
@@ -129,9 +127,9 @@ pub trait Wasm<ExecC, QueryC>: AllQuerier {
 // pub struct WasmKeeper<ExecC: 'static, QueryC: 'static> {
 pub struct WasmKeeper<ExecC, QueryC> {
     /// Contract codes that stand for wasm code in real-life blockchain.
-    code_base: HashMap<usize, WasmContract>,
+    pub code_base: HashMap<usize, WasmContract>,
     /// Code data with code base identifier and additional attributes.  
-    code_data: HashMap<usize, CodeData>,
+    pub code_data: HashMap<usize, CodeData>,
     /// Just markers to make type elision fork when using it as `Wasm` trait
     _e: std::marker::PhantomData<ExecC>,
     /// Just markers to make type elision fork when using it as `Wasm` trait
@@ -178,33 +176,6 @@ impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
     }
 }
 
-impl<ExecC, QueryC> AllQuerier for WasmKeeper<ExecC, QueryC> {
-    type Output = WasmStorage;
-    fn query_all(&self, storage: &dyn Storage) -> AnyResult<WasmStorage> {
-        let all_local_state: Vec<_> = storage.range(None, None, Order::Ascending).collect();
-
-        let contracts = CONTRACTS
-            .range(
-                &prefixed_read(storage, NAMESPACE_WASM),
-                None,
-                None,
-                Order::Ascending,
-            )
-            .map(|res| match res {
-                Ok((key, value)) => Ok((key.to_string(), value)),
-                Err(e) => Err(e),
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
-
-        Ok(WasmStorage {
-            contracts,
-            storage: all_local_state,
-            codes: self.code_base.clone(),
-            code_data: self.code_data.clone(),
-        })
-    }
-}
-
 impl<ExecC, QueryC> Wasm<ExecC, QueryC> for WasmKeeper<ExecC, QueryC>
 where
     ExecC: CustomMsg + DeserializeOwned + 'static,
@@ -239,22 +210,16 @@ where
             #[cfg(feature = "cosmwasm_1_2")]
             WasmQuery::CodeInfo { code_id } => {
                 let code_data = self.code_data(code_id);
-                let mut res = cosmwasm_std::CodeInfoResponse::default();
-                if let Ok(code_data) = code_data {
+                let res = if let Ok(code_data) = code_data {
+                    let mut res = cosmwasm_std::CodeInfoResponse::default();
                     res.code_id = code_id;
                     res.creator = code_data.creator.to_string();
                     res.checksum = cosmwasm_std::HexBinary::from(
                         Sha256::digest(format!("contract code {}", code_data.seed)).to_vec(),
                     );
+                    res
                 } else {
-                    // Remote case
-                    let remote = self.remote.clone().unwrap();
-                    let wasm_querier = CosmWasm::new(remote.channel);
-
-                    let code_info = remote.rt.block_on(wasm_querier.code(code_id))?;
-                    res.code_id = code_id;
-                    res.creator = code_info.creator.to_string();
-                    res.checksum = code_info.data_hash.into();
+                    WasmRemoteQuerier::code_info(self.remote.clone().unwrap(), code_id)?
                 };
                 to_binary(&res).map_err(Into::into)
             }
@@ -370,40 +335,21 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
         WasmContract::new_distant_contract(address.to_string())
     }
 
-    pub fn load_distant_contract(remote: RemoteChannel, address: &Addr) -> AnyResult<ContractData> {
-        let wasm_querier = CosmWasm::new(remote.channel);
-
-        let code_info = remote
-            .rt
-            .block_on(wasm_querier.contract_info(address.clone()))?;
-
-        Ok(ContractData {
-            admin: {
-                match code_info.admin.as_str() {
-                    "" => None,
-                    a => Some(Addr::unchecked(a)),
-                }
-            },
-            code_id: code_info.code_id,
-            created: code_info.created.unwrap().block_height,
-            creator: Addr::unchecked(code_info.creator),
-            label: code_info.label,
-        })
-    }
-
     pub fn load_contract(&self, storage: &dyn Storage, address: &Addr) -> AnyResult<ContractData> {
-        if let Ok(local_contract) = CONTRACTS.load(&prefixed_read(storage, NAMESPACE_WASM), address)
-        {
-            return Ok(local_contract);
+        let contract = CONTRACTS.load(&prefixed_read(storage, NAMESPACE_WASM), address);
+        if let Ok(local_contract) = contract {
+            Ok(local_contract)
+        } else {
+            WasmRemoteQuerier::load_distant_contract(self.remote.clone().unwrap(), address)
         }
-
-        let remote_channel = self.remote.clone().unwrap();
-        Self::load_distant_contract(remote_channel, address)
     }
 
     pub fn dump_wasm_raw(&self, storage: &dyn Storage, address: &Addr) -> Vec<Record> {
         let storage = self.contract_storage_readonly(storage, address);
         storage.range(None, None, Order::Ascending).collect()
+    }
+    fn contract_namespace(&self, contract: &Addr) -> Vec<u8> {
+        contract_namespace(contract)
     }
 
     fn contract_storage<'a>(
@@ -413,7 +359,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
     ) -> Box<dyn Storage + 'a> {
         // We double-namespace this, once from global storage -> wasm_storage
         // then from wasm_storage -> the contracts subspace
-        let namespace = contract_namespace(address);
+        let namespace = self.contract_namespace(address);
         let storage = PrefixedStorage::multilevel(storage, &[NAMESPACE_WASM, &namespace]);
         Box::new(storage)
     }
@@ -426,7 +372,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
     ) -> Box<dyn Storage + 'a> {
         // We double-namespace this, once from global storage -> wasm_storage
         // then from wasm_storage -> the contracts subspace
-        let namespace = contract_namespace(address);
+        let namespace = self.contract_namespace(address);
         let storage = ReadonlyPrefixedStorage::multilevel(storage, &[NAMESPACE_WASM, &namespace]);
         Box::new(storage)
     }
@@ -893,7 +839,6 @@ where
     /// You must call init after this to set up the contract properly.
     /// These are separated into two steps to have cleaner return values.
     pub fn register_contract(
-        // TODO
         &self,
         storage: &mut dyn Storage,
         code_id: u64,
@@ -1082,7 +1027,7 @@ where
                 api,
                 querier: QuerierWrapper::new(&querier),
             };
-            action(handler.clone(), deps, env)
+            action(handler, deps, env)
         })
     }
 

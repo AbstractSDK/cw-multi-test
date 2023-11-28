@@ -17,6 +17,7 @@ mod gov;
 mod ibc;
 mod module;
 pub(crate) mod prefixed_storage;
+pub mod queries;
 mod staking;
 mod transactions;
 mod wasm;
@@ -27,7 +28,7 @@ pub use crate::app::{
     SudoMsg,
 };
 pub use crate::bank::{Bank, BankKeeper, BankSudo};
-pub use crate::contracts::{Contract, ContractWrapper};
+pub use crate::contracts::Contract;
 pub use crate::executor::{AppResponse, Executor};
 pub use crate::gov::Gov;
 pub use crate::ibc::{Ibc, IbcAcceptingModule};

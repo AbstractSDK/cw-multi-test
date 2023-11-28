@@ -13,10 +13,9 @@ use cw_storage_plus::{Deque, Item, Map};
 use serde::{Deserialize, Serialize};
 
 use crate::app::CosmosRouter;
-use crate::bank::BankSudo;
 use crate::executor::AppResponse;
 use crate::prefixed_storage::{prefixed, prefixed_read};
-use crate::Module;
+use crate::{BankSudo, Module};
 
 // Contains some general staking parameters
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
