@@ -865,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "cw-multi-test"
-version = "0.16.5"
+version = "0.16.7"
 dependencies = [
  "anyhow",
  "base64 0.21.4",
