@@ -14,7 +14,7 @@ use cw_utils::NativeBalance;
 
 use crate::bank::BankKeeper;
 use crate::prefixed_storage::get_full_contract_storage_namespace;
-use crate::wasm::ContractData;
+use crate::wasm::{CodeData, ContractData};
 
 use super::contract::WasmContract;
 use super::query::AllQuerier;
@@ -23,6 +23,7 @@ use super::query::AllQuerier;
 pub struct WasmStorage {
     pub contracts: HashMap<String, ContractData>,
     pub codes: HashMap<usize, WasmContract>,
+    pub code_data: HashMap<usize, CodeData>,
     pub storage: Vec<(Vec<u8>, Vec<u8>)>,
 }
 

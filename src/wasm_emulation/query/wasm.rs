@@ -16,6 +16,8 @@ use cosmwasm_std::{ContractResult, Empty};
 use cw_orch_daemon::queriers::CosmWasm;
 
 use cosmwasm_std::WasmQuery;
+#[cfg(feature = "cosmwasm_1_2")]
+use sha2::{Digest, Sha256};
 
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::WasmKeeper;
@@ -143,6 +145,35 @@ impl WasmQuerier {
                 (
                     SystemResult::Ok(ContractResult::Ok(bin)),
                     GasInfo::with_externally_used(result.gas_used),
+                )
+            }
+            #[cfg(feature = "cosmwasm_1_2")]
+            WasmQuery::CodeInfo { code_id } => {
+                let code_data = self
+                    .current_storage
+                    .wasm
+                    .code_data
+                    .get(&(*code_id as usize));
+                let mut res = cosmwasm_std::CodeInfoResponse::default();
+                if let Some(code_data) = code_data {
+                    res.code_id = *code_id;
+                    res.creator = code_data.creator.to_string();
+                    res.checksum = cosmwasm_std::HexBinary::from(
+                        Sha256::digest(format!("contract code {}", code_data.seed)).to_vec(),
+                    );
+                } else {
+                    // Remote case
+                    let remote = self.remote.clone();
+                    let wasm_querier = CosmWasm::new(remote.channel);
+
+                    let code_info = remote.rt.block_on(wasm_querier.code(*code_id)).unwrap();
+                    res.code_id = *code_id;
+                    res.creator = code_info.creator.to_string();
+                    res.checksum = code_info.data_hash.into();
+                };
+                (
+                    SystemResult::Ok(to_binary(&res).into()),
+                    GasInfo::with_externally_used(GAS_COST_CONTRACT_INFO),
                 )
             }
             _ => unimplemented!(),

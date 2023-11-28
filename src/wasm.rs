@@ -77,18 +77,19 @@ pub struct ContractData {
     pub created: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 /// Contract code base data.
-struct CodeData {
+pub struct CodeData {
     /// Address of an account that initially stored the contract code.
     //FIXME Remove this feature flag when the default flag is `cosmwasm_1_2` or higher.
     #[cfg_attr(feature = "cosmwasm_1_1", allow(dead_code))]
-    creator: Addr,
+    pub creator: Addr,
     /// Seed used to generate a checksum for underlying code base.
     //FIXME Remove this feature flag when the default flag is `cosmwasm_1_2` or higher.
     #[cfg_attr(feature = "cosmwasm_1_1", allow(dead_code))]
-    seed: usize,
+    pub seed: usize,
     /// Identifier of the code base where the contract code is stored in memory.
-    code_base_id: usize,
+    pub code_base_id: usize,
 }
 
 pub trait Wasm<ExecC, QueryC>: AllQuerier {
@@ -199,6 +200,7 @@ impl<ExecC, QueryC> AllQuerier for WasmKeeper<ExecC, QueryC> {
             contracts,
             storage: all_local_state,
             codes: self.code_base.clone(),
+            code_data: self.code_data.clone(),
         })
     }
 }
