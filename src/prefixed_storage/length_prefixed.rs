@@ -6,10 +6,6 @@
 //! Everything in this file is only responsible for building such keys
 //! and is not specific to any kind of storage.
 
-use cosmwasm_std::Addr;
-
-use crate::wasm::NAMESPACE_WASM;
-
 pub const CONTRACT_STORAGE_PREFIX: &str = "contract_data/";
 /// Calculates the raw key prefix for a given namespace.
 ///
@@ -54,15 +50,15 @@ pub fn decode_length(bytes: [u8; 2]) -> u32 {
     u32::from_be_bytes([0, 0, bytes[0], bytes[1]])
 }
 
-pub fn contract_namespace(contract: &Addr) -> Vec<u8> {
+pub fn contract_namespace(contract: &cosmwasm_std::Addr) -> Vec<u8> {
     let mut name = CONTRACT_STORAGE_PREFIX.as_bytes().to_vec();
     name.extend_from_slice(contract.as_bytes());
     name
 }
 
-pub fn get_full_contract_storage_namespace(contract_addr: &Addr) -> Vec<u8> {
+pub fn get_full_contract_storage_namespace(contract_addr: &cosmwasm_std::Addr) -> Vec<u8> {
     let namespace = contract_namespace(contract_addr);
-    to_length_prefixed_nested(&[NAMESPACE_WASM, &namespace])
+    to_length_prefixed_nested(&[crate::wasm::NAMESPACE_WASM, &namespace])
 }
 
 #[cfg(test)]

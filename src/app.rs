@@ -1,28 +1,10 @@
 use crate::wasm_emulation::api::RealApi;
 use crate::wasm_emulation::channel::RemoteChannel;
-use crate::AppBuilder;
-use crate::GovFailingModule;
-use crate::IbcFailingModule;
-use cosmwasm_std::from_json;
-use cosmwasm_std::to_json_binary;
 use cosmwasm_std::CustomMsg;
 use cw_storage_plus::Item;
 
-use std::fmt::Debug;
-use std::marker::PhantomData;
-
-use anyhow::bail;
-use anyhow::Result as AnyResult;
-use cosmwasm_std::testing::{MockApi, MockStorage};
-use cosmwasm_std::{
-    Addr, Api, Binary, BlockInfo, ContractResult, CosmosMsg, CustomQuery, Empty, Querier,
-    QuerierResult, QuerierWrapper, QueryRequest, Record, Storage, SystemError, SystemResult,
-};
-use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-
 use crate::bank::{Bank, BankKeeper, BankSudo};
+use crate::error::{bail, AnyResult};
 use crate::executor::{AppResponse, Executor};
 use crate::gov::Gov;
 use crate::ibc::Ibc;
@@ -31,6 +13,17 @@ use crate::staking::{Distribution, DistributionKeeper, StakeKeeper, Staking, Sta
 use crate::transactions::transactional;
 use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};
 use crate::wasm_emulation::contract::WasmContract;
+use crate::{AppBuilder, GovFailingModule, IbcFailingModule};
+use cosmwasm_std::testing::{MockApi, MockStorage};
+use cosmwasm_std::{
+    from_json, to_json_binary, Addr, Api, Binary, BlockInfo, ContractResult, CosmosMsg,
+    CustomQuery, Empty, Querier, QuerierResult, QuerierWrapper, QueryRequest, Record, Storage,
+    SystemError, SystemResult,
+};
+use schemars::JsonSchema;
+use serde::{de::DeserializeOwned, Serialize};
+use std::fmt::Debug;
+use std::marker::PhantomData;
 
 use crate::wasm_emulation::input::STARGATE_ALL_BANK_QUERY_URL;
 use crate::wasm_emulation::input::STARGATE_ALL_WASM_QUERY_URL;
@@ -253,7 +246,6 @@ where
     }
 
     /// Registers contract code (like [store_code](Self::store_code)),
-
     /// but takes the address of the code creator as an additional argument.
     pub fn store_code_with_creator(&mut self, creator: Addr, code: WasmContract) -> u64 {
         self.init_modules(|router, _, _| router.wasm.store_code(creator, code))

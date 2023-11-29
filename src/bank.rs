@@ -1,25 +1,21 @@
+use crate::app::CosmosRouter;
+use crate::error::{bail, AnyResult};
+use crate::executor::AppResponse;
+use crate::module::Module;
+use crate::prefixed_storage::{prefixed, prefixed_read};
 use crate::queries::bank::BankRemoteQuerier;
-
-use anyhow::{bail, Result as AnyResult};
-use itertools::Itertools;
-use schemars::JsonSchema;
-
+use crate::wasm_emulation::channel::RemoteChannel;
+use crate::wasm_emulation::query::AllQuerier;
 use cosmwasm_std::{
     coin, to_json_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankMsg, BankQuery,
     Binary, BlockInfo, Coin, Event, Querier, Storage,
 };
-use cw_storage_plus::Map;
-use cw_utils::NativeBalance;
-
-use crate::app::CosmosRouter;
-use crate::executor::AppResponse;
-use crate::module::Module;
-use crate::prefixed_storage::{prefixed, prefixed_read};
 #[cfg(feature = "cosmwasm_1_1")]
 use cosmwasm_std::{Order, StdResult, SupplyResponse, Uint128};
-
-use crate::wasm_emulation::channel::RemoteChannel;
-use crate::wasm_emulation::query::AllQuerier;
+use cw_storage_plus::Map;
+use cw_utils::NativeBalance;
+use itertools::Itertools;
+use schemars::JsonSchema;
 
 pub(crate) const BALANCES: Map<&Addr, NativeBalance> = Map::new("balances");
 
@@ -77,11 +73,10 @@ impl BankKeeper {
 
     fn get_balance(&self, bank_storage: &dyn Storage, account: &Addr) -> AnyResult<Vec<Coin>> {
         // If there is no balance present, we query it on the distant chain
-        if !BALANCES.has(bank_storage, account) {
-            BankRemoteQuerier::get_balance(self.remote.clone().unwrap(), account)
+        if let Some(val) = BALANCES.may_load(bank_storage, account)? {
+            Ok(val.into_vec())
         } else {
-            let val = BALANCES.may_load(bank_storage, account)?;
-            Ok(val.unwrap_or_default().into_vec())
+            BankRemoteQuerier::get_balance(self.remote.clone().unwrap(), account)
         }
     }
 

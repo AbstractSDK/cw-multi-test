@@ -1,41 +1,35 @@
-use crate::prefixed_storage::contract_namespace;
-use crate::queries::wasm::WasmRemoteQuerier;
-use crate::wasm_emulation::channel::RemoteChannel;
-use cosmwasm_std::{CustomMsg, HexBinary};
-
-use std::collections::HashMap;
-use std::fmt::Debug;
-
-use cosmwasm_std::{
-    to_json_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo, Coin, ContractInfo,
-    ContractInfoResponse, CustomQuery, Deps, DepsMut, Env, Event, MessageInfo, Order, Querier,
-    QuerierWrapper, Record, Reply, ReplyOn, Response, StdResult, Storage, SubMsg, SubMsgResponse,
-    SubMsgResult, TransactionInfo, WasmMsg, WasmQuery,
-};
-
-use prost::Message;
-use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-
 use crate::addresses::{AddressGenerator, SimpleAddressGenerator};
-use cw_storage_plus::Map;
-
 use crate::app::{CosmosRouter, RouterQuerier};
 use crate::checksums::{ChecksumGenerator, SimpleChecksumGenerator};
 use crate::contracts::Contract;
 use crate::error::{bail, AnyContext, AnyError, AnyResult, Error};
 use crate::executor::AppResponse;
+use crate::prefixed_storage::contract_namespace;
 use crate::prefixed_storage::{prefixed, prefixed_read, PrefixedStorage, ReadonlyPrefixedStorage};
+use crate::queries::wasm::WasmRemoteQuerier;
 use crate::transactions::transactional;
+use crate::wasm_emulation::channel::RemoteChannel;
+use crate::wasm_emulation::contract::WasmContract;
+use crate::wasm_emulation::query::AllQuerier;
 use cosmwasm_std::testing::mock_wasmd_attr;
+use cosmwasm_std::CustomMsg;
+use cosmwasm_std::{
+    to_json_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo, Coin, ContractInfo,
+    ContractInfoResponse, CustomQuery, Deps, DepsMut, Env, Event, HexBinary, MessageInfo, Order,
+    Querier, QuerierWrapper, Record, Reply, ReplyOn, Response, StdResult, Storage, SubMsg,
+    SubMsgResponse, SubMsgResult, TransactionInfo, WasmMsg, WasmQuery,
+};
+use cw_storage_plus::Map;
+use prost::Message;
+use schemars::JsonSchema;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt::Debug;
 
 //TODO Make `CONTRACTS` private in version 1.0 when the function AddressGenerator::next_address will be removed.
 /// Contract state kept in storage, separate from the contracts themselves (contract code).
 pub(crate) const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
-
-use crate::wasm_emulation::contract::WasmContract;
-use crate::wasm_emulation::query::AllQuerier;
 
 //TODO Make `NAMESPACE_WASM` private in version 1.0 when the function AddressGenerator::next_address will be removed.
 pub(crate) const NAMESPACE_WASM: &[u8] = b"wasm";
@@ -138,15 +132,14 @@ pub struct WasmKeeper<ExecC, QueryC> {
     pub code_base: HashMap<usize, WasmContract>,
     /// Code data with code base identifier and additional attributes.  
     pub code_data: HashMap<usize, CodeData>,
-    /// Just markers to make type elision fork when using it as `Wasm` trait
-    _e: std::marker::PhantomData<ExecC>,
-    /// Just markers to make type elision fork when using it as `Wasm` trait
-    _q: std::marker::PhantomData<QueryC>,
+    /// Contract's address generator.
     address_generator: Box<dyn AddressGenerator>,
+    /// Contract's code checksum generator.
     checksum_generator: Box<dyn ChecksumGenerator>,
-
     // chain on which the contract should be queried/tested against
     remote: Option<RemoteChannel>,
+    /// Just markers to make type elision fork when using it as `Wasm` trait
+    _p: std::marker::PhantomData<(ExecC, QueryC)>,
 }
 
 impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
@@ -154,10 +147,9 @@ impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
         Self {
             code_base: HashMap::new(),
             code_data: HashMap::new(),
-            _e: std::marker::PhantomData,
-            _q: std::marker::PhantomData,
             address_generator: Box::new(SimpleAddressGenerator),
             checksum_generator: Box::new(SimpleChecksumGenerator),
+            _p: std::marker::PhantomData,
             remote: None,
         }
     }
@@ -196,16 +188,11 @@ where
             }
             #[cfg(feature = "cosmwasm_1_2")]
             WasmQuery::CodeInfo { code_id } => {
-                let code_data = self.code_data(code_id);
-                let res = if let Ok(code_data) = code_data {
-                    let mut res = cosmwasm_std::CodeInfoResponse::default();
-                    res.code_id = code_id;
-                    res.creator = code_data.creator.to_string();
-                    res.checksum = code_data.checksum.clone();
-                    res
-                } else {
-                    WasmRemoteQuerier::code_info(self.remote.clone().unwrap(), code_id)?
-                };
+                let code_data = self.code_data(code_id)?;
+                let mut res = cosmwasm_std::CodeInfoResponse::default();
+                res.code_id = code_id;
+                res.creator = code_data.creator.to_string();
+                res.checksum = code_data.checksum.clone();
                 to_json_binary(&res).map_err(Into::into)
             }
             other => bail!(Error::UnsupportedWasmQuery(other)),
@@ -308,38 +295,30 @@ where
     /// Returns a handler to code of the contract with specified code id.
     pub fn contract_code(&self, code_id: u64) -> AnyResult<WasmContract> {
         let code_data = self.code_data(code_id)?;
-        Ok(self
-            .code_base
-            .get(&code_data.code_base_id)
-            .ok_or(Error::UnregisteredCodeId(code_id))?
-            .clone())
+        let code = self.code_base.get(&code_data.code_base_id);
+        if let Some(code) = code {
+            Ok(code.clone())
+        } else {
+            Ok(WasmContract::new_distant_code_id(code_id))
+        }
     }
 
     /// Returns code data of the contract with specified code id.
-    fn code_data(&self, code_id: u64) -> AnyResult<&CodeData> {
+    fn code_data(&self, code_id: u64) -> AnyResult<CodeData> {
         if code_id < 1 {
             bail!(Error::InvalidCodeId);
         }
-        Ok(self
-            .code_data
-            .get(&(code_id as usize))
-            .ok_or(Error::UnregisteredCodeId(code_id))?)
-    }
-
-    /// This function won't error if it doesn't find the contract
-    /// This allows for querying an online contract struct without having to check if it exists just there
-    /// Upon execution, it will fail if the contract doesn't exist
-    fn get_code(&self, storage: &dyn Storage, address: &Addr) -> WasmContract {
-        if let Ok(handler) = self.contract_data(storage, address) {
-            let code = self.code_base.get(&(handler.code_id as usize));
-            if let Some(code) = code {
-                return code.clone();
-            } else {
-                return WasmContract::new_distant_code_id(handler.code_id);
-            }
+        if let Some(code_data) = self.code_data.get(&(code_id as usize)) {
+            Ok(code_data.clone())
+        } else {
+            let code_info_response =
+                WasmRemoteQuerier::code_info(self.remote.clone().unwrap(), code_id)?;
+            Ok(CodeData {
+                creator: Addr::unchecked(code_info_response.creator),
+                checksum: code_info_response.checksum,
+                code_base_id: code_id as usize,
+            })
         }
-
-        WasmContract::new_distant_contract(address.to_string())
     }
 
     pub fn dump_wasm_raw(&self, storage: &dyn Storage, address: &Addr) -> Vec<Record> {
@@ -930,13 +909,8 @@ where
             )?
         } else {
             // generate non-predictable contract address
-            self.address_generator.contract_address(
-                api,
-                storage,
-                code_id,
-                instance_id,
-                //self.remote.clone().map(|c| c.chain.bech32_prefix),
-            )?
+            self.address_generator
+                .contract_address(api, storage, code_id, instance_id)?
         };
 
         // contract with the same address must not already exist
@@ -1079,8 +1053,8 @@ where
     where
         F: FnOnce(WasmContract, Deps<QueryC>, Env) -> AnyResult<T>,
     {
-        let handler = self.get_code(storage, &address);
-
+        let contract = self.contract_data(storage, &address)?;
+        let handler = self.contract_code(contract.code_id)?;
         let storage = self.contract_storage_readonly(storage, &address);
         let env = self.get_env(address, block);
 
@@ -1105,7 +1079,8 @@ where
         F: FnOnce(WasmContract, DepsMut<QueryC>, Env) -> AnyResult<T>,
         ExecC: DeserializeOwned,
     {
-        let handler = self.get_code(storage, &address);
+        let contract = self.contract_data(storage, &address)?;
+        let handler = self.contract_code(contract.code_id)?;
 
         // We don't actually need a transaction here, as it is already embedded in a transactional.
         // execute_submsg or App.execute_multi.

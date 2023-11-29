@@ -28,10 +28,11 @@ pub enum Error {
     #[error("code id {0}: no such code")]
     UnregisteredCodeId(u64),
 
-    #[error("Unregistered contract address, not present locally or on-chain")]
-    UnregisteredContractAddress(String),
     #[error("Contract with this address already exists: {0}")]
     DuplicatedContractAddress(String),
+
+    #[error("Unregistered contract address, not present locally or on-chain")]
+    UnregisteredContractAddress(String),
 }
 
 impl Error {
