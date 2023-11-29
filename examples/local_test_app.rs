@@ -1,14 +1,15 @@
-// use ibc_chain_registry::chain::ChainData;
+// use cw_multi_test::wasm_emulation::channel::RemoteChannel;
 // use std::path::Path;
+// use tokio::runtime::Runtime;
 
 // use cosmwasm_schema::{cw_serde, QueryResponses};
 // use cosmwasm_std::Empty;
 
+// use cw_multi_test::error::AnyResult;
 // use cw_multi_test::wasm_emulation::contract::WasmContract;
 // use cw_multi_test::wasm_emulation::storage::analyzer::StorageAnalyzer;
 // use cw_multi_test::AppBuilder;
 // use cw_multi_test::Executor;
-// use cw_multi_test::FailingModule;
 // use cw_multi_test::WasmKeeper;
 
 // use cw_orch_daemon::networks::PHOENIX_1;
@@ -59,19 +60,20 @@
 //     pub t: String,
 // }
 
-// pub fn main() {
+// pub fn test() -> AnyResult<()> {
 //     env_logger::init();
 
-//     let chain: ChainData = PHOENIX_1.into();
+//     let runtime = Runtime::new()?;
+//     let chain = PHOENIX_1;
+//     let remote_channel = RemoteChannel::new(&runtime, chain)?;
 
-//     let mut wasm = WasmKeeper::<Empty, Empty>::new();
-//     wasm.set_chain(chain.clone());
+//     let wasm = WasmKeeper::<Empty, Empty>::new().with_remote(remote_channel.clone());
 
 //     // First we instantiate a new app
 //     let app = AppBuilder::default()
-//         .with_chain(chain.clone())
-//         .with_wasm::<FailingModule<Empty, Empty, Empty>, _>(wasm);
-//     let mut app = app.build(|_, _, _| {});
+//         .with_remote(remote_channel.clone())
+//         .with_wasm(wasm);
+//     let mut app = app.build(|_, _, _| {})?;
 
 //     // Then we send a message to the blockchain through the app
 //     let sender = app.next_address();
@@ -82,7 +84,7 @@
 //             .join("counter_contract.wasm"),
 //     )
 //     .unwrap();
-//     let counter_contract = WasmContract::new_local(code, chain.clone());
+//     let counter_contract = WasmContract::new_local(code);
 
 //     let code_id = app.store_code(counter_contract);
 
@@ -164,7 +166,7 @@
 
 //     // Analyze the storage
 
-//     let analysis = StorageAnalyzer::new(&app, chain).unwrap();
+//     let analysis = StorageAnalyzer::new(&app).unwrap();
 
 //     log::info!(
 //         "analysis, wasm1 {:?}",
@@ -181,6 +183,7 @@
 //         analysis.all_readable_contract_storage()
 //     );
 //     analysis.compare_all_readable_contract_storage();
+//     Ok(())
 // }
 
 fn main() {}
