@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{Addr, CodeInfoResponse, Order, Storage, Binary};
+use cosmwasm_std::{Addr, Binary, CodeInfoResponse, Order, Storage};
 use cw_orch_daemon::queriers::{CosmWasm, DaemonQuerier};
 
 use crate::{
