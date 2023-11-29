@@ -6,8 +6,12 @@
 //!
 //! To understand the design of this module, please refer to `../DESIGN.md`
 
+pub mod addons;
+mod addresses;
 mod app;
+mod app_builder;
 mod bank;
+mod checksums;
 #[allow(clippy::type_complexity)]
 mod contracts;
 pub mod custom_handler;
@@ -23,17 +27,19 @@ mod transactions;
 mod wasm;
 pub mod wasm_emulation;
 
-pub use crate::app::{
-    custom_app, next_block, App, AppBuilder, BasicApp, BasicAppBuilder, CosmosRouter, Router,
-    SudoMsg,
-};
+pub use crate::addresses::{AddressGenerator, SimpleAddressGenerator};
+pub use crate::app::{custom_app, next_block, App, BasicApp, CosmosRouter, Router, SudoMsg};
+pub use crate::app_builder::{AppBuilder, BasicAppBuilder};
 pub use crate::bank::{Bank, BankKeeper, BankSudo};
+pub use crate::checksums::ChecksumGenerator;
 pub use crate::contracts::Contract;
+
 pub use crate::executor::{AppResponse, Executor};
-pub use crate::gov::Gov;
-pub use crate::ibc::{Ibc, IbcAcceptingModule};
-pub use crate::module::{FailingModule, Module};
+pub use crate::gov::{Gov, GovAcceptingModule, GovFailingModule};
+pub use crate::ibc::{Ibc, IbcAcceptingModule, IbcFailingModule};
+pub use crate::module::{AcceptingModule, FailingModule, Module};
 pub use crate::staking::{
     Distribution, DistributionKeeper, StakeKeeper, Staking, StakingInfo, StakingSudo,
 };
-pub use crate::wasm::{AddressGenerator, Wasm, WasmKeeper, WasmSudo, LOCAL_CODE_OFFSET};
+
+pub use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo, LOCAL_CODE_OFFSET};

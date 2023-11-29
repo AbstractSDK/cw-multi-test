@@ -3,14 +3,26 @@ use crate::prefixed_storage::to_length_prefixed;
 use crate::prefixed_storage::CONTRACT_STORAGE_PREFIX;
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::input::get_querier_storage;
+use crate::Bank;
+use crate::Distribution;
+use crate::Gov;
+use crate::Ibc;
+use crate::Module;
+use crate::Staking;
+use crate::Wasm;
 use cosmwasm_std::Addr;
+use cosmwasm_std::Api;
 use cosmwasm_std::Coin;
+use cosmwasm_std::CustomQuery;
+use cosmwasm_std::Storage;
 use cw_orch_daemon::queriers::CosmWasm;
 use cw_orch_daemon::queriers::DaemonQuerier;
 use cw_utils::NativeBalance;
 use rustc_serialize::json::Json;
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde::__private::from_utf8_lossy;
+use serde::de::DeserializeOwned;
 use treediff::diff;
 use treediff::tools::Recorder;
 
@@ -32,7 +44,23 @@ pub struct StorageAnalyzer {
 }
 
 impl StorageAnalyzer {
-    pub fn new(app: &App) -> AnyResult<Self> {
+    pub fn new<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>(
+        app: &App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>,
+    ) -> AnyResult<Self>
+    where
+        CustomT::ExecT:
+            std::fmt::Debug + PartialEq + Clone + JsonSchema + DeserializeOwned + 'static,
+        CustomT::QueryT: CustomQuery + DeserializeOwned + 'static,
+        WasmT: Wasm<CustomT::ExecT, CustomT::QueryT>,
+        BankT: Bank,
+        ApiT: Api,
+        StorageT: Storage,
+        CustomT: Module,
+        StakingT: Staking,
+        DistrT: Distribution,
+        IbcT: Ibc,
+        GovT: Gov,
+    {
         Ok(Self {
             storage: get_querier_storage(&app.wrap())?,
             remote: app.remote.clone(),

@@ -6,7 +6,7 @@ use crate::wasm_emulation::query::mock_querier::QueryResultWithGas;
 use cosmwasm_std::Binary;
 use cosmwasm_vm::GasInfo;
 
-use cosmwasm_std::to_binary;
+use cosmwasm_std::to_json_binary;
 use cosmwasm_std::{
     AllDelegationsResponse, AllValidatorsResponse, BondedDenomResponse, DelegationResponse,
     FullDelegation, StakingQuery, Validator, ValidatorResponse,
@@ -37,13 +37,13 @@ impl StakingQuerier {
                 let res = BondedDenomResponse {
                     denom: self.denom.clone(),
                 };
-                to_binary(&res).into()
+                to_json_binary(&res).into()
             }
             StakingQuery::AllValidators {} => {
                 let res = AllValidatorsResponse {
                     validators: self.validators.clone(),
                 };
-                to_binary(&res).into()
+                to_json_binary(&res).into()
             }
             StakingQuery::Validator { address } => {
                 let validator: Option<Validator> = self
@@ -52,7 +52,7 @@ impl StakingQuerier {
                     .find(|validator| validator.address == *address)
                     .cloned();
                 let res = ValidatorResponse { validator };
-                to_binary(&res).into()
+                to_json_binary(&res).into()
             }
             StakingQuery::AllDelegations { delegator } => {
                 let delegations: Vec<_> = self
@@ -63,7 +63,7 @@ impl StakingQuerier {
                     .map(|d| d.into())
                     .collect();
                 let res = AllDelegationsResponse { delegations };
-                to_binary(&res).into()
+                to_json_binary(&res).into()
             }
             StakingQuery::Delegation {
                 delegator,
@@ -76,7 +76,7 @@ impl StakingQuerier {
                 let res = DelegationResponse {
                     delegation: delegation.cloned(),
                 };
-                to_binary(&res).into()
+                to_json_binary(&res).into()
             }
             &_ => panic!("Not implemented {:?}", request),
         };

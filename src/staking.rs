@@ -1,21 +1,18 @@
-use std::collections::{BTreeSet, VecDeque};
-
-use anyhow::{anyhow, bail, Result as AnyResult};
-use schemars::JsonSchema;
-
+use crate::app::CosmosRouter;
+use crate::error::{anyhow, bail, AnyResult};
+use crate::executor::AppResponse;
+use crate::prefixed_storage::{prefixed, prefixed_read};
+use crate::{BankSudo, Module};
 use cosmwasm_std::{
-    coin, ensure, ensure_eq, to_binary, Addr, AllDelegationsResponse, AllValidatorsResponse, Api,
-    BankMsg, Binary, BlockInfo, BondedDenomResponse, Coin, CustomQuery, Decimal, Delegation,
+    coin, ensure, ensure_eq, to_json_binary, Addr, AllDelegationsResponse, AllValidatorsResponse,
+    Api, BankMsg, Binary, BlockInfo, BondedDenomResponse, Coin, CustomQuery, Decimal, Delegation,
     DelegationResponse, DistributionMsg, Empty, Event, FullDelegation, Querier, StakingMsg,
     StakingQuery, Storage, Timestamp, Uint128, Validator, ValidatorResponse,
 };
 use cw_storage_plus::{Deque, Item, Map};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-use crate::app::CosmosRouter;
-use crate::executor::AppResponse;
-use crate::prefixed_storage::{prefixed, prefixed_read};
-use crate::{BankSudo, Module};
+use std::collections::{BTreeSet, VecDeque};
 
 // Contains some general staking parameters
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -116,10 +113,23 @@ pub enum StakingSudo {
     /// Causes the unbonding queue to be processed.
     /// This needs to be triggered manually, since there is no good place to do this right now.
     /// In cosmos-sdk, this is done in `EndBlock`, but we don't have that here.
+    #[deprecated(note = "This is not needed anymore. Just call `update_block`")]
     ProcessQueue {},
 }
 
-pub trait Staking: Module<ExecT = StakingMsg, QueryT = StakingQuery, SudoT = StakingSudo> {}
+pub trait Staking: Module<ExecT = StakingMsg, QueryT = StakingQuery, SudoT = StakingSudo> {
+    /// This is called from the end blocker (`update_block` / `set_block`) to process the
+    /// staking queue.
+    /// Needed because unbonding has a waiting time.
+    /// If you're implementing a dummy staking module, this can be a no-op.
+    fn process_queue<ExecC, QueryC: CustomQuery>(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+    ) -> AnyResult<AppResponse>;
+}
 
 pub trait Distribution: Module<ExecT = DistributionMsg, QueryT = Empty, SudoT = Empty> {}
 
@@ -521,9 +531,86 @@ impl StakeKeeper {
         ensure!(percentage <= Decimal::one(), anyhow!("expected percentage"));
         Ok(())
     }
+
+    fn process_queue<ExecC, QueryC: CustomQuery>(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+    ) -> AnyResult<AppResponse> {
+        let staking_storage = prefixed_read(storage, NAMESPACE_STAKING);
+        let mut unbonding_queue = UNBONDING_QUEUE
+            .may_load(&staking_storage)?
+            .unwrap_or_default();
+        loop {
+            let mut staking_storage = prefixed(storage, NAMESPACE_STAKING);
+            match unbonding_queue.front() {
+                // assuming the queue is sorted by payout_at
+                Some(Unbonding { payout_at, .. }) if payout_at <= &block.time => {
+                    // remove from queue
+                    let Unbonding {
+                        delegator,
+                        validator,
+                        amount,
+                        ..
+                    } = unbonding_queue.pop_front().unwrap();
+
+                    // remove staking entry if it is empty
+                    let delegation = self
+                        .get_stake(&staking_storage, &delegator, &validator)?
+                        .map(|mut stake| {
+                            // add unbonding amounts
+                            stake.amount += unbonding_queue
+                                .iter()
+                                .filter(|u| u.delegator == delegator && u.validator == validator)
+                                .map(|u| u.amount)
+                                .sum::<Uint128>();
+                            stake
+                        });
+                    match delegation {
+                        Some(delegation) if delegation.amount.is_zero() => {
+                            STAKES.remove(&mut staking_storage, (&delegator, &validator));
+                        }
+                        None => STAKES.remove(&mut staking_storage, (&delegator, &validator)),
+                        _ => {}
+                    }
+
+                    let staking_info = Self::get_staking_info(&staking_storage)?;
+                    if !amount.is_zero() {
+                        router.execute(
+                            api,
+                            storage,
+                            block,
+                            self.module_addr.clone(),
+                            BankMsg::Send {
+                                to_address: delegator.into_string(),
+                                amount: vec![coin(amount.u128(), &staking_info.bonded_denom)],
+                            }
+                            .into(),
+                        )?;
+                    }
+                }
+                _ => break,
+            }
+        }
+        let mut staking_storage = prefixed(storage, NAMESPACE_STAKING);
+        UNBONDING_QUEUE.save(&mut staking_storage, &unbonding_queue)?;
+        Ok(AppResponse::default())
+    }
 }
 
-impl Staking for StakeKeeper {}
+impl Staking for StakeKeeper {
+    fn process_queue<ExecC, QueryC: CustomQuery>(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+    ) -> AnyResult<AppResponse> {
+        self.process_queue(api, storage, router, block)
+    }
+}
 
 impl Module for StakeKeeper {
     type ExecT = StakingMsg;
@@ -669,73 +756,8 @@ impl Module for StakeKeeper {
 
                 Ok(AppResponse::default())
             }
-            StakingSudo::ProcessQueue {} => {
-                let staking_storage = prefixed_read(storage, NAMESPACE_STAKING);
-                let mut unbonding_queue = UNBONDING_QUEUE
-                    .may_load(&staking_storage)?
-                    .unwrap_or_default();
-                loop {
-                    let mut staking_storage = prefixed(storage, NAMESPACE_STAKING);
-                    match unbonding_queue.front() {
-                        // assuming the queue is sorted by payout_at
-                        Some(Unbonding { payout_at, .. }) if payout_at <= &block.time => {
-                            // remove from queue
-                            let Unbonding {
-                                delegator,
-                                validator,
-                                amount,
-                                ..
-                            } = unbonding_queue.pop_front().unwrap();
-
-                            // remove staking entry if it is empty
-                            let delegation = self
-                                .get_stake(&staking_storage, &delegator, &validator)?
-                                .map(|mut stake| {
-                                    // add unbonding amounts
-                                    stake.amount += unbonding_queue
-                                        .iter()
-                                        .filter(|u| {
-                                            u.delegator == delegator && u.validator == validator
-                                        })
-                                        .map(|u| u.amount)
-                                        .sum::<Uint128>();
-                                    stake
-                                });
-                            match delegation {
-                                Some(delegation) if delegation.amount.is_zero() => {
-                                    STAKES.remove(&mut staking_storage, (&delegator, &validator));
-                                }
-                                None => {
-                                    STAKES.remove(&mut staking_storage, (&delegator, &validator))
-                                }
-                                _ => {}
-                            }
-
-                            let staking_info = Self::get_staking_info(&staking_storage)?;
-                            if !amount.is_zero() {
-                                router.execute(
-                                    api,
-                                    storage,
-                                    block,
-                                    self.module_addr.clone(),
-                                    BankMsg::Send {
-                                        to_address: delegator.into_string(),
-                                        amount: vec![coin(
-                                            amount.u128(),
-                                            &staking_info.bonded_denom,
-                                        )],
-                                    }
-                                    .into(),
-                                )?;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
-                let mut staking_storage = prefixed(storage, NAMESPACE_STAKING);
-                UNBONDING_QUEUE.save(&mut staking_storage, &unbonding_queue)?;
-                Ok(AppResponse::default())
-            }
+            #[allow(deprecated)]
+            StakingSudo::ProcessQueue {} => self.process_queue(api, storage, router, block),
         }
     }
 
@@ -749,7 +771,7 @@ impl Module for StakeKeeper {
     ) -> AnyResult<Binary> {
         let staking_storage = prefixed_read(storage, NAMESPACE_STAKING);
         match request {
-            StakingQuery::BondedDenom {} => Ok(to_binary(&BondedDenomResponse {
+            StakingQuery::BondedDenom {} => Ok(to_json_binary(&BondedDenomResponse {
                 denom: Self::get_staking_info(&staking_storage)?.bonded_denom,
             })?),
             StakingQuery::AllDelegations { delegator } => {
@@ -776,7 +798,9 @@ impl Module for StakeKeeper {
                     })
                     .collect();
 
-                Ok(to_binary(&AllDelegationsResponse { delegations: res? })?)
+                Ok(to_json_binary(&AllDelegationsResponse {
+                    delegations: res?,
+                })?)
             }
             StakingQuery::Delegation {
                 delegator,
@@ -827,13 +851,13 @@ impl Module for StakeKeeper {
                     }
                 };
 
-                let res = to_binary(&full_delegation_response)?;
+                let res = to_json_binary(&full_delegation_response)?;
                 Ok(res)
             }
-            StakingQuery::AllValidators {} => Ok(to_binary(&AllValidatorsResponse {
+            StakingQuery::AllValidators {} => Ok(to_json_binary(&AllValidatorsResponse {
                 validators: self.get_validators(&staking_storage)?,
             })?),
-            StakingQuery::Validator { address } => Ok(to_binary(&ValidatorResponse {
+            StakingQuery::Validator { address } => Ok(to_json_binary(&ValidatorResponse {
                 validator: self.get_validator(&staking_storage, &Addr::unchecked(address))?,
             })?),
             q => bail!("Unsupported staking sudo message: {:?}", q),

@@ -1,3 +1,4 @@
+pub use anyhow::{anyhow, bail, Context as AnyContext, Error as AnyError, Result as AnyResult};
 use cosmwasm_std::{WasmMsg, WasmQuery};
 use thiserror::Error;
 
@@ -29,6 +30,8 @@ pub enum Error {
 
     #[error("Unregistered contract address, not present locally or on-chain")]
     UnregisteredContractAddress(String),
+    #[error("Contract with this address already exists: {0}")]
+    DuplicatedContractAddress(String),
 }
 
 impl Error {
@@ -48,5 +51,9 @@ impl Error {
 
     pub fn event_type_too_short(ty: impl Into<String>) -> Self {
         Self::EventTypeTooShort(ty.into())
+    }
+
+    pub fn duplicated_contract_address(address: impl Into<String>) -> Self {
+        Self::DuplicatedContractAddress(address.into())
     }
 }

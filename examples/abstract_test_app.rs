@@ -31,7 +31,7 @@
 
 // use abstract_core::objects::module::ModuleInfo;
 // use abstract_core::objects::module::ModuleVersion;
-// use cosmwasm_std::{to_binary, Addr};
+// use cosmwasm_std::{to_json_binary, Addr};
 // use cw_multi_test::AppBuilder;
 // use cw_multi_test::BankKeeper;
 // use cw_multi_test::Executor;
@@ -210,7 +210,7 @@
 //         Addr::unchecked(owner.clone()),
 //         manager.address().unwrap(),
 //         &ExecuteMsg::InstallModule {
-//             init_msg: Some(to_binary(&Empty {}).unwrap()),
+//             init_msg: Some(to_json_binary(&Empty {}).unwrap()),
 //             module,
 //         },
 //         &[],
@@ -231,7 +231,7 @@
 
 //     /*
 //         app.execute_contract(Addr::unchecked(owner.clone()), manager.address().unwrap(),&ExecuteMsg::ExecOnModule { module_id: "abstract:dex".to_string(),
-//             exec_msg: to_binary(&abstract_dex_adapter::msg::ExecuteMsg::Base(
+//             exec_msg: to_json_binary(&abstract_dex_adapter::msg::ExecuteMsg::Base(
 //                 abstract_core::adapter::BaseExecuteMsg::UpdateAuthorizedAddresses {
 //                     to_add: vec![manager.address().unwrap().to_string()],
 //                     to_remove: vec![]
@@ -297,7 +297,7 @@
 //         manager.address().unwrap(),
 //         &ExecuteMsg::ExecOnModule {
 //             module_id: "abstract:dex".to_string(),
-//             exec_msg: to_binary(&abstract_dex_adapter::msg::ExecuteMsg::Module(
+//             exec_msg: to_json_binary(&abstract_dex_adapter::msg::ExecuteMsg::Module(
 //                 AdapterRequestMsg {
 //                     proxy_address: None,
 //                     request: DexExecuteMsg::Action {

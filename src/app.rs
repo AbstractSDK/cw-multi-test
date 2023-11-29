@@ -1,5 +1,10 @@
 use crate::wasm_emulation::api::RealApi;
 use crate::wasm_emulation::channel::RemoteChannel;
+use crate::AppBuilder;
+use crate::GovFailingModule;
+use crate::IbcFailingModule;
+use cosmwasm_std::from_json;
+use cosmwasm_std::to_json_binary;
 use cosmwasm_std::CustomMsg;
 use cw_storage_plus::Item;
 
@@ -8,11 +13,10 @@ use std::marker::PhantomData;
 
 use anyhow::bail;
 use anyhow::Result as AnyResult;
-use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
+use cosmwasm_std::testing::{MockApi, MockStorage};
 use cosmwasm_std::{
-    from_slice, to_binary, Addr, Api, Binary, BlockInfo, ContractResult, CosmosMsg, CustomQuery,
-    Empty, GovMsg, IbcMsg, IbcQuery, Querier, QuerierResult, QuerierWrapper, QueryRequest, Record,
-    Storage, SystemError, SystemResult,
+    Addr, Api, Binary, BlockInfo, ContractResult, CosmosMsg, CustomQuery, Empty, Querier,
+    QuerierResult, QuerierWrapper, QueryRequest, Record, Storage, SystemError, SystemResult,
 };
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -47,12 +51,14 @@ pub type BasicApp<ExecC = Empty, QueryC = Empty> = App<
     WasmKeeper<ExecC, QueryC>,
     StakeKeeper,
     DistributionKeeper,
-    FailingModule<IbcMsg, IbcQuery, Empty>,
+    IbcFailingModule,
+    GovFailingModule,
 >;
 
 /// Router is a persisted state. You can query this.
 /// Execution generally happens on the RouterCache, which then can be atomically committed or rolled back.
 /// We offer .execute() as a wrapper around cache, execute, commit/rollback process.
+#[derive(Clone)]
 pub struct App<
     Bank = BankKeeper,
     Api = MockApi,
@@ -61,14 +67,14 @@ pub struct App<
     Wasm = WasmKeeper<Empty, Empty>,
     Staking = StakeKeeper,
     Distr = DistributionKeeper,
-    Ibc = FailingModule<IbcMsg, IbcQuery, Empty>,
-    Gov = FailingModule<GovMsg, Empty, Empty>,
+    Ibc = IbcFailingModule,
+    Gov = GovFailingModule,
 > {
-    router: Router<Bank, Custom, Wasm, Staking, Distr, Ibc, Gov>,
-    api: Api,
-    storage: Storage,
-    block: BlockInfo,
-    pub remote: RemoteChannel,
+    pub(crate) router: Router<Bank, Custom, Wasm, Staking, Distr, Ibc, Gov>,
+    pub(crate) api: Api,
+    pub(crate) storage: Storage,
+    pub(crate) block: BlockInfo,
+    pub(crate) remote: RemoteChannel,
 }
 
 impl BasicApp {
@@ -82,8 +88,8 @@ impl BasicApp {
                 WasmKeeper<Empty, Empty>,
                 StakeKeeper,
                 DistributionKeeper,
-                FailingModule<IbcMsg, IbcQuery, Empty>,
-                FailingModule<GovMsg, Empty, Empty>,
+                IbcFailingModule,
+                GovFailingModule,
             >,
             &dyn Api,
             &mut dyn Storage,
@@ -109,8 +115,8 @@ where
             WasmKeeper<ExecC, QueryC>,
             StakeKeeper,
             DistributionKeeper,
-            FailingModule<IbcMsg, IbcQuery, Empty>,
-            FailingModule<GovMsg, Empty, Empty>,
+            IbcFailingModule,
+            GovFailingModule,
         >,
         &dyn Api,
         &mut dyn Storage,
@@ -163,532 +169,6 @@ where
     }
 }
 
-/// This is essential to create a custom app with custom handler.
-///   let mut app = BasicAppBuilder::<E, Q>::new_custom().with_custom(handler).build();
-pub type BasicAppBuilder<ExecC, QueryC> = AppBuilder<
-    BankKeeper,
-    MockApi,
-    MockStorage,
-    FailingModule<ExecC, QueryC, Empty>,
-    WasmKeeper<ExecC, QueryC>,
-    StakeKeeper,
-    DistributionKeeper,
-    FailingModule<IbcMsg, IbcQuery, Empty>,
-    FailingModule<GovMsg, Empty, Empty>,
->;
-
-/// Utility to build App in stages. If particular items wont be set, defaults would be used
-pub struct AppBuilder<Bank, Api, Storage, Custom, Wasm, Staking, Distr, Ibc, Gov> {
-    api: Api,
-    block: BlockInfo,
-    storage: Storage,
-    bank: Bank,
-    wasm: Wasm,
-    custom: Custom,
-    staking: Staking,
-    distribution: Distr,
-    ibc: Ibc,
-    gov: Gov,
-    remote: Option<RemoteChannel>,
-}
-
-impl Default
-    for AppBuilder<
-        BankKeeper,
-        MockApi,
-        MockStorage,
-        FailingModule<Empty, Empty, Empty>,
-        WasmKeeper<Empty, Empty>,
-        StakeKeeper,
-        DistributionKeeper,
-        FailingModule<IbcMsg, IbcQuery, Empty>,
-        FailingModule<GovMsg, Empty, Empty>,
-    >
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl
-    AppBuilder<
-        BankKeeper,
-        MockApi,
-        MockStorage,
-        FailingModule<Empty, Empty, Empty>,
-        WasmKeeper<Empty, Empty>,
-        StakeKeeper,
-        DistributionKeeper,
-        FailingModule<IbcMsg, IbcQuery, Empty>,
-        FailingModule<GovMsg, Empty, Empty>,
-    >
-{
-    /// Creates builder with default components working with empty exec and query messages.
-    pub fn new() -> Self {
-        AppBuilder {
-            api: MockApi::default(),
-            block: mock_env().block,
-            storage: MockStorage::new(),
-            bank: BankKeeper::new(),
-            wasm: WasmKeeper::new(),
-            custom: FailingModule::new(),
-            staking: StakeKeeper::new(),
-            distribution: DistributionKeeper::new(),
-            ibc: FailingModule::new(),
-            gov: FailingModule::new(),
-            remote: None,
-        }
-    }
-}
-
-impl<ExecC, QueryC>
-    AppBuilder<
-        BankKeeper,
-        MockApi,
-        MockStorage,
-        FailingModule<ExecC, QueryC, Empty>,
-        WasmKeeper<ExecC, QueryC>,
-        StakeKeeper,
-        DistributionKeeper,
-        FailingModule<IbcMsg, IbcQuery, Empty>,
-        FailingModule<GovMsg, Empty, Empty>,
-    >
-where
-    ExecC: CustomMsg + DeserializeOwned + 'static,
-    QueryC: Debug + CustomQuery + DeserializeOwned + 'static,
-{
-    /// Creates builder with default components designed to work with custom exec and query
-    /// messages.
-    pub fn new_custom() -> Self {
-        AppBuilder {
-            api: MockApi::default(),
-            block: mock_env().block,
-            storage: MockStorage::new(),
-            bank: BankKeeper::new(),
-            wasm: WasmKeeper::new(),
-            custom: FailingModule::new(),
-            staking: StakeKeeper::new(),
-            distribution: DistributionKeeper::new(),
-            ibc: FailingModule::new(),
-            gov: FailingModule::new(),
-            remote: None,
-        }
-    }
-}
-
-impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
-    AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
-{
-    /// Overwrites default wasm executor.
-    ///
-    /// At this point it is needed that new wasm implements some `Wasm` trait, but it doesn't need
-    /// to be bound to Bank or Custom yet - as those may change. The cross-components validation is
-    /// done on final building.
-    ///
-    /// Also it is possible to completely abandon trait bounding here which would not be bad idea,
-    /// however it might make the message on build creepy in many cases, so as for properly build
-    /// `App` we always want `Wasm` to be `Wasm`, some checks are done early.
-    pub fn with_wasm<C: Module, NewWasm: Wasm<C::ExecT, C::QueryT>>(
-        self,
-        wasm: NewWasm,
-    ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, NewWasm, StakingT, DistrT, IbcT, GovT> {
-        let AppBuilder {
-            bank,
-            api,
-            storage,
-            custom,
-            block,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default bank interface
-    pub fn with_bank<NewBank: Bank>(
-        self,
-        bank: NewBank,
-    ) -> AppBuilder<NewBank, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
-        let AppBuilder {
-            wasm,
-            api,
-            storage,
-            custom,
-            block,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default api interface
-    pub fn with_api<NewApi: Api>(
-        self,
-        api: NewApi,
-    ) -> AppBuilder<BankT, NewApi, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
-        let AppBuilder {
-            wasm,
-            bank,
-            storage,
-            custom,
-            block,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default storage interface
-    pub fn with_storage<NewStorage: Storage>(
-        self,
-        storage: NewStorage,
-    ) -> AppBuilder<BankT, ApiT, NewStorage, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
-        let AppBuilder {
-            wasm,
-            api,
-            bank,
-            custom,
-            block,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default custom messages handler
-    ///
-    /// At this point it is needed that new custom implements some `Module` trait, but it doesn't need
-    /// to be bound to ExecC or QueryC yet - as those may change. The cross-components validation is
-    /// done on final building.
-    ///
-    /// Also it is possible to completely abandon trait bounding here which would not be bad idea,
-    /// however it might make the message on build creepy in many cases, so as for properly build
-    /// `App` we always want `Wasm` to be `Wasm`, some checks are done early.
-    pub fn with_custom<NewCustom: Module>(
-        self,
-        custom: NewCustom,
-    ) -> AppBuilder<BankT, ApiT, StorageT, NewCustom, WasmT, StakingT, DistrT, IbcT, GovT> {
-        let AppBuilder {
-            wasm,
-            bank,
-            api,
-            storage,
-            block,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default bank interface
-    pub fn with_staking<NewStaking: Staking>(
-        self,
-        staking: NewStaking,
-    ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, NewStaking, DistrT, IbcT, GovT> {
-        let AppBuilder {
-            wasm,
-            api,
-            storage,
-            custom,
-            block,
-            bank,
-            distribution,
-            ibc,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default distribution interface
-    pub fn with_distribution<NewDistribution: Distribution>(
-        self,
-        distribution: NewDistribution,
-    ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, NewDistribution, IbcT, GovT>
-    {
-        let AppBuilder {
-            wasm,
-            api,
-            storage,
-            custom,
-            block,
-            staking,
-            bank,
-            ibc,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default ibc interface.
-    ///
-    /// If you wish to simply ignore/drop all returned IBC Messages, you can use the `IbcAcceptingModule` type.
-    ///     builder.with_ibc(IbcAcceptingModule::new())
-    pub fn with_ibc<NewIbc: Ibc>(
-        self,
-        ibc: NewIbc,
-    ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, NewIbc, GovT> {
-        let AppBuilder {
-            wasm,
-            api,
-            storage,
-            custom,
-            block,
-            staking,
-            bank,
-            distribution,
-            gov,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-
-    /// Overwrites default gov interface
-    pub fn with_gov<NewGov: Gov>(
-        self,
-        gov: NewGov,
-    ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, NewGov> {
-        let AppBuilder {
-            wasm,
-            api,
-            storage,
-            custom,
-            block,
-            staking,
-            bank,
-            distribution,
-            ibc,
-            remote,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            gov,
-            remote,
-        }
-    }
-    /// Sets the chain of the app
-    pub fn with_remote(
-        self,
-        remote: RemoteChannel,
-    ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
-        let AppBuilder {
-            wasm,
-            api,
-            storage,
-            custom,
-            block,
-            staking,
-            bank,
-            distribution,
-            ibc,
-            gov,
-            ..
-        } = self;
-
-        AppBuilder {
-            api,
-            block,
-            storage,
-            bank,
-            wasm,
-            custom,
-            staking,
-            distribution,
-            ibc,
-            remote: Some(remote),
-            gov,
-        }
-    }
-
-    /// Overwrites default initial block
-    pub fn with_block(mut self, block: BlockInfo) -> Self {
-        self.block = block;
-        self
-    }
-
-    /// Builds final `App`. At this point all components type have to be properly related to each
-    /// other. If there are some generics related compilation error make sure, that all components
-    /// are properly relating to each other.
-    pub fn build<F>(
-        self,
-        init_fn: F,
-    ) -> AnyResult<App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>>
-    where
-        BankT: Bank,
-        ApiT: Api,
-        StorageT: Storage,
-        CustomT: Module,
-        WasmT: Wasm<CustomT::ExecT, CustomT::QueryT>,
-        StakingT: Staking,
-        DistrT: Distribution,
-        IbcT: Ibc,
-        GovT: Gov,
-        F: FnOnce(
-            &mut Router<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>,
-            &dyn Api,
-            &mut dyn Storage,
-        ),
-    {
-        let router = Router {
-            wasm: self.wasm,
-            bank: self.bank,
-            custom: self.custom,
-            staking: self.staking,
-            distribution: self.distribution,
-            ibc: self.ibc,
-            gov: self.gov,
-        };
-
-        let mut app = App {
-            router,
-            api: self.api,
-            block: self.block,
-            storage: self.storage,
-            remote: self.remote.unwrap(),
-        };
-        app.init_modules(init_fn);
-        Ok(app)
-    }
-}
-
 impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
     App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
 where
@@ -702,6 +182,26 @@ where
     IbcT: Ibc,
     GovT: Gov,
 {
+    /// Returns a shared reference to application's router.
+    pub fn router(&self) -> &Router<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
+        &self.router
+    }
+
+    /// Returns a shared reference to application's api.
+    pub fn api(&self) -> &ApiT {
+        &self.api
+    }
+
+    /// Returns a shared reference to application's storage.
+    pub fn storage(&self) -> &StorageT {
+        &self.storage
+    }
+
+    /// Returns a mutable reference to application's storage.
+    pub fn storage_mut(&mut self) -> &mut StorageT {
+        &mut self.storage
+    }
+
     pub fn init_modules<F, T>(&mut self, init_fn: F) -> T
     where
         F: FnOnce(
@@ -727,23 +227,14 @@ where
 
 // Helper functions to call some custom WasmKeeper logic.
 // They show how we can easily add such calls to other custom keepers (CustomT, StakingT, etc)
-impl<BankT, ApiT, StorageT, CustomT, StakingT, DistrT, IbcT, GovT>
-    App<
-        BankT,
-        ApiT,
-        StorageT,
-        CustomT,
-        WasmKeeper<CustomT::ExecT, CustomT::QueryT>,
-        StakingT,
-        DistrT,
-        IbcT,
-        GovT,
-    >
+impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
+    App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
 where
     BankT: Bank,
     ApiT: Api,
     StorageT: Storage,
     CustomT: Module,
+    WasmT: Wasm<CustomT::ExecT, CustomT::QueryT>,
     StakingT: Staking,
     DistrT: Distribution,
     IbcT: Ibc,
@@ -753,14 +244,6 @@ where
 {
     /// Registers contract code (like uploading wasm bytecode on a chain),
     /// so it can later be used to instantiate a contract.
-    #[cfg(feature = "multitest_api_1_0")]
-    pub fn store_code(&mut self, creator: Addr, code: WasmContract) -> u64 {
-        self.init_modules(|router, _, _| router.wasm.store_code(creator, code))
-    }
-
-    /// Registers contract code (like uploading wasm bytecode on a chain),
-    /// so it can later be used to instantiate a contract.
-    #[cfg(not(feature = "multitest_api_1_0"))]
     pub fn store_code(&mut self, code: WasmContract) -> u64 {
         self.init_modules(|router, _, _| {
             router
@@ -770,8 +253,8 @@ where
     }
 
     /// Registers contract code (like [store_code](Self::store_code)),
-    /// takes the code creator address as an additional argument.
-    #[cfg(not(feature = "multitest_api_1_0"))]
+
+    /// but takes the address of the code creator as an additional argument.
     pub fn store_code_with_creator(&mut self, creator: Addr, code: WasmContract) -> u64 {
         self.init_modules(|router, _, _| router.wasm.store_code(creator, code))
     }
@@ -793,7 +276,7 @@ where
     /// #  use serde::{Deserialize, Serialize};
     /// #  use cw_multi_test::{Contract, ContractWrapper};
     /// #
-    /// #  fn instantiate(_: DepsMut, _: Env, _: MessageInfo, _: Empty) -> Result<Response, StdError> {  
+    /// #  fn instantiate(_: DepsMut, _: Env, _: MessageInfo, _: Empty) -> Result<Response, StdError> {
     /// #    todo!()
     /// #  }
     /// #
@@ -804,7 +287,7 @@ where
     /// #  fn query(_deps: Deps, _env: Env, _msg: Empty) -> Result<Binary, StdError> {
     /// #    todo!()
     /// #  }
-    /// #  
+    /// #
     ///   pub fn contract() -> Box<dyn Contract<Empty>> {
     ///     // should return the contract
     /// #   Box::new(ContractWrapper::new(execute, instantiate, query))
@@ -814,10 +297,7 @@ where
     /// let mut app = App::default();
     ///
     /// // store a new contract, save the code id
-    /// # #[cfg(not(feature = "multitest_api_1_0"))]
-    /// let code_id = app.store_code_with_creator(Addr::unchecked("creator"), echo::contract());
-    /// # #[cfg(feature = "multitest_api_1_0")]
-    /// # let code_id = app.store_code(Addr::unchecked("creator"), echo::contract());
+    /// let code_id = app.store_code(echo::contract());
     ///
     /// // duplicate the existing contract, duplicated contract has different code id
     /// assert_ne!(code_id, app.duplicate_code(code_id).unwrap());
@@ -832,12 +312,12 @@ where
         self.init_modules(|router, _, _| router.wasm.duplicate_code(code_id))
     }
 
-    /// This allows to get `ContractData` for specific contract
+    /// Returns `ContractData` for the contract with specified address.
     pub fn contract_data(&self, address: &Addr) -> AnyResult<ContractData> {
-        self.read_module(|router, _, storage| router.wasm.load_contract(storage, address))
+        self.read_module(|router, _, storage| router.wasm.contract_data(storage, address))
     }
 
-    /// This gets a raw state dump of all key-values held by a given contract
+    /// Returns a raw state dump of all key-values held by a contract with specified address.
     pub fn dump_wasm_raw(&self, address: &Addr) -> Vec<Record> {
         self.read_module(|router, _, storage| router.wasm.dump_wasm_raw(storage, address))
     }
@@ -859,11 +339,19 @@ where
     GovT: Gov,
 {
     pub fn set_block(&mut self, block: BlockInfo) {
+        self.router
+            .staking
+            .process_queue(&self.api, &mut self.storage, &self.router, &self.block)
+            .unwrap();
         self.block = block;
     }
 
     // this let's use use "next block" steps that add eg. one height and 5 seconds
     pub fn update_block<F: Fn(&mut BlockInfo)>(&mut self, action: F) {
+        self.router
+            .staking
+            .process_queue(&self.api, &mut self.storage, &self.router, &self.block)
+            .unwrap();
         action(&mut self.block);
     }
 
@@ -929,7 +417,7 @@ where
         contract_addr: U,
         msg: &T,
     ) -> AnyResult<AppResponse> {
-        let msg = to_binary(msg)?;
+        let msg = to_json_binary(msg)?;
 
         let Self {
             block,
@@ -967,6 +455,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct Router<Bank, Custom, Wasm, Staking, Distr, Ibc, Gov> {
     // this can remain crate-only as all special functions are wired up to app currently
     // we need to figure out another format for wasm, as some like sudo need to be called after init
@@ -1122,8 +611,8 @@ where
             QueryRequest::Ibc(req) => self.ibc.query(api, storage, &querier, block, req),
             // We add those custom local stargate queries to mock querying all the local storage in order to propagate for the in-contract-querier
             QueryRequest::Stargate { path, data: _ } => match path.as_str() {
-                STARGATE_ALL_WASM_QUERY_URL => Ok(to_binary(&self.wasm.query_all(storage)?)?),
-                STARGATE_ALL_BANK_QUERY_URL => Ok(to_binary(&self.bank.query_all(storage)?)?),
+                STARGATE_ALL_WASM_QUERY_URL => Ok(to_json_binary(&self.wasm.query_all(storage)?)?),
+                STARGATE_ALL_BANK_QUERY_URL => Ok(to_json_binary(&self.bank.query_all(storage)?)?),
                 _ => unimplemented!(),
             },
             _ => unimplemented!(),
@@ -1234,7 +723,7 @@ where
     QueryC: CustomQuery + DeserializeOwned + 'static,
 {
     fn raw_query(&self, bin_request: &[u8]) -> QuerierResult {
-        let request: QueryRequest<QueryC> = match from_slice(bin_request) {
+        let request: QueryRequest<QueryC> = match from_json(bin_request) {
             Ok(v) => v,
             Err(e) => {
                 return SystemResult::Err(SystemError::InvalidRequest {

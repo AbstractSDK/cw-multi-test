@@ -7,7 +7,6 @@ use cw20::Cw20QueryMsg;
 use cw_multi_test::wasm_emulation::channel::RemoteChannel;
 use cw_multi_test::AppBuilder;
 use cw_multi_test::BankKeeper;
-use cw_multi_test::FailingModule;
 use cw_orch_daemon::networks::PHOENIX_1;
 
 use cw_multi_test::WasmKeeper;
@@ -26,15 +25,13 @@ pub fn test() -> anyhow::Result<()> {
     let chain = PHOENIX_1;
     let remote_channel = RemoteChannel::new(&runtime, chain)?;
 
-    let mut wasm = WasmKeeper::<Empty, Empty>::new();
-    wasm.set_remote(remote_channel.clone());
+    let wasm = WasmKeeper::<Empty, Empty>::new().with_remote(remote_channel.clone());
 
-    let mut bank = BankKeeper::new();
-    bank.set_remote(remote_channel.clone());
+    let bank = BankKeeper::new().with_remote(remote_channel.clone());
 
     // First we instantiate a new app
     let mut app = AppBuilder::default()
-        .with_wasm::<FailingModule<Empty, Empty, Empty>, _>(wasm)
+        .with_wasm(wasm)
         .with_bank(bank)
         .with_remote(remote_channel)
         .build(|_, _, _| {})?;

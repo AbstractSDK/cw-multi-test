@@ -1,14 +1,13 @@
 use crate::prefixed_storage::contract_namespace;
 use crate::queries::wasm::WasmRemoteQuerier;
-use crate::wasm_emulation::api::RealApi;
 use crate::wasm_emulation::channel::RemoteChannel;
-use cosmwasm_std::CustomMsg;
+use cosmwasm_std::{CustomMsg, HexBinary};
 
 use std::collections::HashMap;
 use std::fmt::Debug;
 
 use cosmwasm_std::{
-    to_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo, Coin, ContractInfo,
+    to_json_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo, Coin, ContractInfo,
     ContractInfoResponse, CustomQuery, Deps, DepsMut, Env, Event, MessageInfo, Order, Querier,
     QuerierWrapper, Record, Reply, ReplyOn, Response, StdResult, Storage, SubMsg, SubMsgResponse,
     SubMsgResult, TransactionInfo, WasmMsg, WasmQuery,
@@ -19,27 +18,27 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::addresses::{AddressGenerator, SimpleAddressGenerator};
 use cw_storage_plus::Map;
 
 use crate::app::{CosmosRouter, RouterQuerier};
+use crate::checksums::{ChecksumGenerator, SimpleChecksumGenerator};
 use crate::contracts::Contract;
-use crate::error::Error;
+use crate::error::{bail, AnyContext, AnyError, AnyResult, Error};
 use crate::executor::AppResponse;
 use crate::prefixed_storage::{prefixed, prefixed_read, PrefixedStorage, ReadonlyPrefixedStorage};
 use crate::transactions::transactional;
 use cosmwasm_std::testing::mock_wasmd_attr;
 
-use anyhow::{bail, Context, Result as AnyResult};
-#[cfg(feature = "cosmwasm_1_2")]
-use sha2::{Digest, Sha256};
+//TODO Make `CONTRACTS` private in version 1.0 when the function AddressGenerator::next_address will be removed.
+/// Contract state kept in storage, separate from the contracts themselves (contract code).
+pub(crate) const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
 
 use crate::wasm_emulation::contract::WasmContract;
 use crate::wasm_emulation::query::AllQuerier;
 
-// Contract state is kept in Storage, separate from the contracts themselves
-pub(crate) const CONTRACTS: Map<&Addr, ContractData> = Map::new("contracts");
-
-pub const NAMESPACE_WASM: &[u8] = b"wasm";
+//TODO Make `NAMESPACE_WASM` private in version 1.0 when the function AddressGenerator::next_address will be removed.
+pub(crate) const NAMESPACE_WASM: &[u8] = b"wasm";
 /// See <https://github.com/chipshort/wasmd/blob/d0e3ed19f041e65f112d8e800416b3230d0005a2/x/wasm/types/events.go#L58>
 const CONTRACT_ATTR: &str = "_contract_address";
 pub const LOCAL_CODE_OFFSET: usize = 5_000_000;
@@ -54,13 +53,13 @@ impl WasmSudo {
     pub fn new<T: Serialize>(contract_addr: &Addr, msg: &T) -> StdResult<WasmSudo> {
         Ok(WasmSudo {
             contract_addr: contract_addr.clone(),
-            msg: to_binary(msg)?,
+            msg: to_json_binary(msg)?,
         })
     }
 }
 
 /// Contract data includes information about contract,
-/// equivalent of `ContractInfo` in **wasmd** interface.
+/// equivalent of `ContractInfo` in `wasmd` interface.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct ContractData {
     /// Identifier of stored contract code
@@ -79,13 +78,9 @@ pub struct ContractData {
 /// Contract code base data.
 pub struct CodeData {
     /// Address of an account that initially stored the contract code.
-    //FIXME Remove this feature flag when the default flag is `cosmwasm_1_2` or higher.
-    #[cfg_attr(feature = "cosmwasm_1_1", allow(dead_code))]
     pub creator: Addr,
-    /// Seed used to generate a checksum for underlying code base.
-    //FIXME Remove this feature flag when the default flag is `cosmwasm_1_2` or higher.
-    #[cfg_attr(feature = "cosmwasm_1_1", allow(dead_code))]
-    pub seed: usize,
+    /// Checksum of the contract's code base.
+    pub checksum: HexBinary,
     /// Identifier of the code base where the contract code is stored in memory.
     pub code_base_id: usize,
 }
@@ -101,7 +96,7 @@ pub trait Wasm<ExecC, QueryC>: AllQuerier {
         request: WasmQuery,
     ) -> AnyResult<Binary>;
 
-    /// Handles all WasmMsg messages
+    /// Handles all `WasmMsg` messages.
     fn execute(
         &self,
         api: &dyn Api,
@@ -112,7 +107,7 @@ pub trait Wasm<ExecC, QueryC>: AllQuerier {
         msg: WasmMsg,
     ) -> AnyResult<AppResponse>;
 
-    /// Admin interface, cannot be called via CosmosMsg
+    /// Handles all sudo messages, this is an admin interface and can not be called via `CosmosMsg`.
     fn sudo(
         &self,
         api: &dyn Api,
@@ -122,6 +117,19 @@ pub trait Wasm<ExecC, QueryC>: AllQuerier {
         block: &BlockInfo,
         msg: Binary,
     ) -> AnyResult<AppResponse>;
+
+    /// Stores the contract's code and returns an identifier of the stored contract's code.
+    fn store_code(&mut self, creator: Addr, code: WasmContract) -> u64;
+
+    /// Duplicates the contract's code with specified identifier
+    /// and returns an identifier of the copy of the contract's code.
+    fn duplicate_code(&mut self, code_id: u64) -> AnyResult<u64>;
+
+    /// Returns `ContractData` for the contract with specified address.
+    fn contract_data(&self, storage: &dyn Storage, address: &Addr) -> AnyResult<ContractData>;
+
+    /// Returns a raw state dump of all key-values held by a contract with specified address.
+    fn dump_wasm_raw(&self, storage: &dyn Storage, address: &Addr) -> Vec<Record>;
 }
 
 // pub struct WasmKeeper<ExecC: 'static, QueryC: 'static> {
@@ -134,33 +142,11 @@ pub struct WasmKeeper<ExecC, QueryC> {
     _e: std::marker::PhantomData<ExecC>,
     /// Just markers to make type elision fork when using it as `Wasm` trait
     _q: std::marker::PhantomData<QueryC>,
-    generator: Box<dyn AddressGenerator>,
+    address_generator: Box<dyn AddressGenerator>,
+    checksum_generator: Box<dyn ChecksumGenerator>,
 
     // chain on which the contract should be queried/tested against
     remote: Option<RemoteChannel>,
-}
-
-pub trait AddressGenerator {
-    fn next_contract_address(&self, storage: &mut dyn Storage, chain_name: Option<String>) -> Addr;
-}
-
-struct SimpleAddressGenerator();
-
-impl AddressGenerator for SimpleAddressGenerator {
-    fn next_contract_address(&self, storage: &mut dyn Storage, prefix: Option<String>) -> Addr {
-        let count = CONTRACTS
-            .range_raw(
-                &prefixed_read(storage, NAMESPACE_WASM),
-                None,
-                None,
-                Order::Ascending,
-            )
-            .count();
-
-        let prefix = prefix.unwrap_or("cosmos".to_string());
-
-        RealApi::new(&prefix).next_contract_address(count)
-    }
 }
 
 impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
@@ -170,7 +156,8 @@ impl<ExecC, QueryC> Default for WasmKeeper<ExecC, QueryC> {
             code_data: HashMap::new(),
             _e: std::marker::PhantomData,
             _q: std::marker::PhantomData,
-            generator: Box::new(SimpleAddressGenerator()),
+            address_generator: Box::new(SimpleAddressGenerator),
+            checksum_generator: Box::new(SimpleChecksumGenerator),
             remote: None,
         }
     }
@@ -200,12 +187,12 @@ where
             }
             WasmQuery::ContractInfo { contract_addr } => {
                 let addr = api.addr_validate(&contract_addr)?;
-                let contract = self.load_contract(storage, &addr)?;
+                let contract = self.contract_data(storage, &addr)?;
                 let mut res = ContractInfoResponse::default();
                 res.code_id = contract.code_id;
                 res.creator = contract.creator.to_string();
                 res.admin = contract.admin.map(|x| x.into());
-                to_binary(&res).map_err(Into::into)
+                to_json_binary(&res).map_err(Into::into)
             }
             #[cfg(feature = "cosmwasm_1_2")]
             WasmQuery::CodeInfo { code_id } => {
@@ -214,14 +201,12 @@ where
                     let mut res = cosmwasm_std::CodeInfoResponse::default();
                     res.code_id = code_id;
                     res.creator = code_data.creator.to_string();
-                    res.checksum = cosmwasm_std::HexBinary::from(
-                        Sha256::digest(format!("contract code {}", code_data.seed)).to_vec(),
-                    );
+                    res.checksum = code_data.checksum.clone();
                     res
                 } else {
                     WasmRemoteQuerier::code_info(self.remote.clone().unwrap(), code_id)?
                 };
-                to_binary(&res).map_err(Into::into)
+                to_json_binary(&res).map_err(Into::into)
             }
             other => bail!(Error::UnsupportedWasmQuery(other)),
         }
@@ -238,7 +223,7 @@ where
     ) -> AnyResult<AppResponse> {
         self.execute_wasm(api, storage, router, block, sender.clone(), msg.clone())
             .context(format!(
-                "error executing WasmMsg:\nsender: {}\n{:?}",
+                "Error executing WasmMsg:\n  sender: {}\n  {:?}",
                 sender, msg
             ))
     }
@@ -258,27 +243,27 @@ where
         let (res, msgs) = self.build_app_response(&contract, custom_event, res);
         self.process_response(api, router, storage, block, contract, res, msgs)
     }
-}
 
-impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
-    /// Stores contract code in the in-memory lookup table.
+    /// Stores the contract's code in the in-memory lookup table.
     /// Returns an identifier of the stored contract code.
-    pub fn store_code(&mut self, creator: Addr, code: WasmContract) -> u64 {
+    fn store_code(&mut self, creator: Addr, code: WasmContract) -> u64 {
         let code_id = self.code_base.len() + 1 + LOCAL_CODE_OFFSET;
         self.code_base.insert(code_id, code);
+        let checksum = self.checksum_generator.checksum(&creator, code_id as u64);
         self.code_data.insert(
             code_id,
             CodeData {
                 creator,
-                seed: code_id,
+                checksum,
                 code_base_id: code_id,
             },
         );
         code_id as u64
     }
 
-    /// Duplicates contract code with specified identifier.
-    pub fn duplicate_code(&mut self, code_id: u64) -> AnyResult<u64> {
+    /// Duplicates the contract's code with specified identifier.
+    /// Returns an identifier of the copy of the contract's code.
+    fn duplicate_code(&mut self, code_id: u64) -> AnyResult<u64> {
         let code_data = self.code_data(code_id)?;
         let code = self
             .code_base
@@ -289,7 +274,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
             code_id,
             CodeData {
                 creator: code_data.creator.clone(),
-                seed: code_data.seed,
+                checksum: code_data.checksum.clone(),
                 code_base_id: code_id,
             },
         );
@@ -298,6 +283,28 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
         Ok(code_id as u64)
     }
 
+    /// Returns `ContractData` for the contract with specified address.
+    fn contract_data(&self, storage: &dyn Storage, address: &Addr) -> AnyResult<ContractData> {
+        let contract = CONTRACTS.load(&prefixed_read(storage, NAMESPACE_WASM), address);
+        if let Ok(local_contract) = contract {
+            Ok(local_contract)
+        } else {
+            WasmRemoteQuerier::load_distant_contract(self.remote.clone().unwrap(), address)
+        }
+    }
+
+    /// Returns a raw state dump of all key-values held by a contract with specified address.
+    fn dump_wasm_raw(&self, storage: &dyn Storage, address: &Addr) -> Vec<Record> {
+        let storage = self.contract_storage_readonly(storage, address);
+        storage.range(None, None, Order::Ascending).collect()
+    }
+}
+
+impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC>
+where
+    ExecC: CustomMsg + DeserializeOwned + 'static,
+    QueryC: CustomQuery + DeserializeOwned + 'static,
+{
     /// Returns a handler to code of the contract with specified code id.
     pub fn contract_code(&self, code_id: u64) -> AnyResult<WasmContract> {
         let code_data = self.code_data(code_id)?;
@@ -323,7 +330,7 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
     /// This allows for querying an online contract struct without having to check if it exists just there
     /// Upon execution, it will fail if the contract doesn't exist
     fn get_code(&self, storage: &dyn Storage, address: &Addr) -> WasmContract {
-        if let Ok(handler) = self.load_contract(storage, address) {
+        if let Ok(handler) = self.contract_data(storage, address) {
             let code = self.code_base.get(&(handler.code_id as usize));
             if let Some(code) = code {
                 return code.clone();
@@ -335,19 +342,11 @@ impl<ExecC, QueryC> WasmKeeper<ExecC, QueryC> {
         WasmContract::new_distant_contract(address.to_string())
     }
 
-    pub fn load_contract(&self, storage: &dyn Storage, address: &Addr) -> AnyResult<ContractData> {
-        let contract = CONTRACTS.load(&prefixed_read(storage, NAMESPACE_WASM), address);
-        if let Ok(local_contract) = contract {
-            Ok(local_contract)
-        } else {
-            WasmRemoteQuerier::load_distant_contract(self.remote.clone().unwrap(), address)
-        }
-    }
-
     pub fn dump_wasm_raw(&self, storage: &dyn Storage, address: &Addr) -> Vec<Record> {
         let storage = self.contract_storage_readonly(storage, address);
         storage.range(None, None, Order::Ascending).collect()
     }
+
     fn contract_namespace(&self, contract: &Addr) -> Vec<u8> {
         contract_namespace(contract)
     }
@@ -425,15 +424,37 @@ where
         Self::default()
     }
 
-    pub fn new_with_custom_address_generator(generator: impl AddressGenerator + 'static) -> Self {
+    #[deprecated(
+        since = "0.18.0",
+        note = "use `WasmKeeper::new().with_address_generator` instead; will be removed in version 1.0.0"
+    )]
+    pub fn new_with_custom_address_generator(
+        address_generator: impl AddressGenerator + 'static,
+    ) -> Self {
         Self {
-            generator: Box::new(generator),
+            address_generator: Box::new(address_generator),
             ..Default::default()
         }
     }
 
-    pub fn set_remote(&mut self, remote: RemoteChannel) {
+    pub fn with_remote(mut self, remote: RemoteChannel) -> Self {
         self.remote = Some(remote);
+        self
+    }
+    pub fn with_address_generator(
+        mut self,
+        address_generator: impl AddressGenerator + 'static,
+    ) -> Self {
+        self.address_generator = Box::new(address_generator);
+        self
+    }
+
+    pub fn with_checksum_generator(
+        mut self,
+        checksum_generator: impl ChecksumGenerator + 'static,
+    ) -> Self {
+        self.checksum_generator = Box::new(checksum_generator);
+        self
     }
 
     pub fn query_smart(
@@ -508,7 +529,7 @@ where
         let admin = new_admin.map(|a| api.addr_validate(&a)).transpose()?;
 
         // check admin status
-        let mut data = self.load_contract(storage, &contract_addr)?;
+        let mut data = self.contract_data(storage, &contract_addr)?;
         if data.admin != Some(sender) {
             bail!("Only admin can update the contract admin: {:?}", data.admin);
         }
@@ -578,60 +599,30 @@ where
                 msg,
                 funds,
                 label,
-            } => {
-                if label.is_empty() {
-                    bail!("Label is required on all contracts");
-                }
-
-                let contract_addr = self.register_contract(
-                    storage,
-                    code_id,
-                    sender.clone(),
-                    admin.map(Addr::unchecked),
-                    label,
-                    block.height,
-                )?;
-
-                // move the cash
-                self.send(
-                    api,
-                    storage,
-                    router,
-                    block,
-                    sender.clone(),
-                    contract_addr.clone().into(),
-                    &funds,
-                )?;
-
-                // then call the contract
-                let info = MessageInfo { sender, funds };
-                let res = self.call_instantiate(
-                    contract_addr.clone(),
-                    api,
-                    storage,
-                    router,
-                    block,
-                    info,
-                    msg.to_vec(),
-                )?;
-
-                let custom_event = Event::new("instantiate")
-                    .add_attribute(CONTRACT_ATTR, &contract_addr)
-                    .add_attribute("code_id", code_id.to_string());
-
-                let (res, msgs) = self.build_app_response(&contract_addr, custom_event, res);
-                let mut res = self.process_response(
-                    api,
-                    router,
-                    storage,
-                    block,
-                    contract_addr.clone(),
-                    res,
-                    msgs,
-                )?;
-                res.data = Some(instantiate_response(res.data, &contract_addr));
-                Ok(res)
-            }
+            } => self.process_wasm_msg_instantiate(
+                api, storage, router, block, sender, admin, code_id, msg, funds, label, None,
+            ),
+            #[cfg(feature = "cosmwasm_1_2")]
+            WasmMsg::Instantiate2 {
+                admin,
+                code_id,
+                msg,
+                funds,
+                label,
+                salt,
+            } => self.process_wasm_msg_instantiate(
+                api,
+                storage,
+                router,
+                block,
+                sender,
+                admin,
+                code_id,
+                msg,
+                funds,
+                label,
+                Some(salt),
+            ),
             WasmMsg::Migrate {
                 contract_addr,
                 new_code_id,
@@ -641,8 +632,7 @@ where
 
                 // We don't check if the code exists here, the call_migrate hook, will take care of that
                 // This allows migrating to an on-chain code_id
-
-                let mut data = self.load_contract(storage, &contract_addr)?;
+                let mut data = self.contract_data(storage, &contract_addr)?;
                 if data.admin != Some(sender) {
                     bail!("Only admin can migrate contract: {:?}", data.admin);
                 }
@@ -677,6 +667,77 @@ where
             }
             msg => bail!(Error::UnsupportedWasmMsg(msg)),
         }
+    }
+
+    /// Processes WasmMsg::Instantiate and WasmMsg::Instantiate2 messages.
+    fn process_wasm_msg_instantiate(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+        sender: Addr,
+        admin: Option<String>,
+        code_id: u64,
+        msg: Binary,
+        funds: Vec<Coin>,
+        label: String,
+        salt: Option<Binary>,
+    ) -> AnyResult<AppResponse> {
+        if label.is_empty() {
+            bail!("Label is required on all contracts");
+        }
+
+        let contract_addr = self.register_contract(
+            api,
+            storage,
+            code_id,
+            sender.clone(),
+            admin.map(Addr::unchecked),
+            label,
+            block.height,
+            salt,
+        )?;
+
+        // move the cash
+        self.send(
+            api,
+            storage,
+            router,
+            block,
+            sender.clone(),
+            contract_addr.clone().into(),
+            &funds,
+        )?;
+
+        // then call the contract
+        let info = MessageInfo { sender, funds };
+        let res = self.call_instantiate(
+            contract_addr.clone(),
+            api,
+            storage,
+            router,
+            block,
+            info,
+            msg.to_vec(),
+        )?;
+
+        let custom_event = Event::new("instantiate")
+            .add_attribute(CONTRACT_ATTR, &contract_addr)
+            .add_attribute("code_id", code_id.to_string());
+
+        let (res, msgs) = self.build_app_response(&contract_addr, custom_event, res);
+        let mut res = self.process_response(
+            api,
+            router,
+            storage,
+            block,
+            contract_addr.clone(),
+            res,
+            msgs,
+        )?;
+        res.data = Some(instantiate_response(res.data, &contract_addr));
+        Ok(res)
     }
 
     /// This will execute the given messages, making all changes to the local cache.
@@ -717,7 +778,7 @@ where
                     }),
                 };
                 // do reply and combine it with the original response
-                let reply_res = self._reply(api, router, storage, block, contract, reply)?;
+                let reply_res = self.reply(api, router, storage, block, contract, reply)?;
                 // override data
                 r.data = reply_res.data;
                 // append the events
@@ -732,9 +793,9 @@ where
             if matches!(reply_on, ReplyOn::Always | ReplyOn::Error) {
                 let reply = Reply {
                     id,
-                    result: SubMsgResult::Err(e.to_string()),
+                    result: SubMsgResult::Err(format!("{:?}", e)),
                 };
-                self._reply(api, router, storage, block, contract, reply)
+                self.reply(api, router, storage, block, contract, reply)
             } else {
                 Err(e)
             }
@@ -743,7 +804,7 @@ where
         }
     }
 
-    fn _reply(
+    fn reply(
         &self,
         api: &dyn Api,
         router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
@@ -829,28 +890,61 @@ where
             let sub_res =
                 self.execute_submsg(api, router, storage, block, contract.clone(), resend)?;
             events.extend_from_slice(&sub_res.events);
-            Ok::<_, anyhow::Error>(sub_res.data.or(data))
+            Ok::<_, AnyError>(sub_res.data.or(data))
         })?;
 
         Ok(AppResponse { events, data })
     }
 
-    /// This just creates an address and empty storage instance, returning the new address
-    /// You must call init after this to set up the contract properly.
-    /// These are separated into two steps to have cleaner return values.
+    /// Creates a contract address and empty storage instance.
+    /// Returns the new contract address.
+    ///
+    /// You have to call init after this to set up the contract properly.
+    /// These two steps are separated to have cleaner return values.
     pub fn register_contract(
         &self,
+        api: &dyn Api,
         storage: &mut dyn Storage,
         code_id: u64,
         creator: Addr,
         admin: impl Into<Option<Addr>>,
         label: String,
         created: u64,
+        salt: impl Into<Option<Binary>>,
     ) -> AnyResult<Addr> {
-        let addr = self
-            .generator
-            .next_contract_address(storage, self.remote.clone().map(|c| c.chain.bech32_prefix));
+        // We don't error if the code id doesn't exist, it allows us to instantiate remote contracts
+        // generate a new contract address
+        let instance_id = self.instance_count(storage) as u64;
+        let addr = if let Some(salt_binary) = salt.into() {
+            // generate predictable contract address when salt is provided
+            let code_data = self.code_data(code_id)?;
+            let canonical_addr = &api.addr_canonicalize(creator.as_ref())?;
+            self.address_generator.predictable_contract_address(
+                api,
+                storage,
+                code_id,
+                instance_id,
+                code_data.checksum.as_slice(),
+                canonical_addr,
+                salt_binary.as_slice(),
+            )?
+        } else {
+            // generate non-predictable contract address
+            self.address_generator.contract_address(
+                api,
+                storage,
+                code_id,
+                instance_id,
+                //self.remote.clone().map(|c| c.chain.bech32_prefix),
+            )?
+        };
 
+        // contract with the same address must not already exist
+        if self.contract_data(storage, &addr).is_ok() {
+            bail!(Error::duplicated_contract_address(addr));
+        }
+
+        // prepare contract data and save new contract instance
         let info = ContractData {
             code_id,
             creator,
@@ -1040,6 +1134,18 @@ where
         CONTRACTS
             .save(&mut prefixed(storage, NAMESPACE_WASM), address, contract)
             .map_err(Into::into)
+    }
+
+    /// Returns the number of all contract instances.
+    fn instance_count(&self, storage: &dyn Storage) -> usize {
+        CONTRACTS
+            .range_raw(
+                &prefixed_read(storage, NAMESPACE_WASM),
+                None,
+                None,
+                Order::Ascending,
+            )
+            .count()
     }
 }
 

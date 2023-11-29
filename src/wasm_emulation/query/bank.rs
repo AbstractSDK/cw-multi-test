@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use cosmwasm_std::Uint128;
 use cosmwasm_std::{AllBalanceResponse, BalanceResponse, BankQuery};
 
-use cosmwasm_std::to_binary;
+use cosmwasm_std::to_json_binary;
 use cosmwasm_std::{ContractResult, SystemResult};
 
 #[derive(Clone)]
@@ -100,7 +100,7 @@ impl BankQuerier {
                         denom: denom.to_string(),
                     },
                 };
-                to_binary(&bank_res).into()
+                to_json_binary(&bank_res).into()
             }
             BankQuery::AllBalances { address } => {
                 // proper error on not found, serialize result on found
@@ -130,7 +130,7 @@ impl BankQuerier {
                 let bank_res = AllBalanceResponse {
                     amount: amount.unwrap(),
                 };
-                to_binary(&bank_res).into()
+                to_json_binary(&bank_res).into()
             }
             &_ => panic!("Not implemented {:?}", request),
         };

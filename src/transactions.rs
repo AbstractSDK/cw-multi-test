@@ -1,20 +1,12 @@
-#[cfg(feature = "iterator")]
+use crate::error::AnyResult;
+use cosmwasm_std::Storage;
+use cosmwasm_std::{Order, Record};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-#[cfg(feature = "iterator")]
 use std::iter;
-#[cfg(feature = "iterator")]
 use std::iter::Peekable;
-#[cfg(feature = "iterator")]
 use std::ops::{Bound, RangeBounds};
 
-use cosmwasm_std::Storage;
-#[cfg(feature = "iterator")]
-use cosmwasm_std::{Order, Record};
-
-use anyhow::Result as AnyResult;
-
-#[cfg(feature = "iterator")]
 /// The BTreeMap specific key-value pair reference type, as returned by `BTreeMap<Vec<u8>, T>::range`.
 /// This is internal as it can change any time if the map implementation is swapped out.
 type BTreeMapPairRef<'a, T = Vec<u8>> = (&'a Vec<u8>, &'a T);
@@ -79,7 +71,6 @@ impl<'a> Storage for StorageTransaction<'a> {
         self.rep_log.append(op);
     }
 
-    #[cfg(feature = "iterator")]
     /// range allows iteration over a set of keys, either forwards or backwards
     /// uses standard rust range notation, and eg db.range(b"foo"..b"bar") also works reverse
     fn range<'b>(
@@ -176,7 +167,6 @@ enum Delta {
     Delete {},
 }
 
-#[cfg(feature = "iterator")]
 struct MergeOverlay<'a, L, R>
 where
     L: Iterator<Item = BTreeMapPairRef<'a, Delta>>,
@@ -187,7 +177,6 @@ where
     order: Order,
 }
 
-#[cfg(feature = "iterator")]
 impl<'a, L, R> MergeOverlay<'a, L, R>
 where
     L: Iterator<Item = BTreeMapPairRef<'a, Delta>>,
@@ -230,7 +219,6 @@ where
     }
 }
 
-#[cfg(feature = "iterator")]
 impl<'a, L, R> Iterator for MergeOverlay<'a, L, R>
 where
     L: Iterator<Item = BTreeMapPairRef<'a, Delta>>,
@@ -257,7 +245,6 @@ where
     }
 }
 
-#[cfg(feature = "iterator")]
 fn range_bounds(start: Option<&[u8]>, end: Option<&[u8]>) -> impl RangeBounds<Vec<u8>> {
     (
         start.map_or(Bound::Unbounded, |x| Bound::Included(x.to_vec())),
@@ -340,7 +327,6 @@ mod test {
         assert_eq!(Some(b"bar".to_vec()), store.borrow().get(b"foo"));
     }
 
-    #[cfg(feature = "iterator")]
     // iterator_test_suite takes a storage, adds data and runs iterator tests
     // the storage must previously have exactly one key: "foo" = "bar"
     // (this allows us to test StorageTransaction and other wrapped storage better)
@@ -515,7 +501,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "iterator")]
     fn storage_transaction_iterator_empty_base() {
         let base = MemoryStorage::new();
         let mut check = StorageTransaction::new(&base);
@@ -524,7 +509,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "iterator")]
     fn storage_transaction_iterator_with_base_data() {
         let mut base = MemoryStorage::new();
         base.set(b"foo", b"bar");
@@ -533,7 +517,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "iterator")]
     fn storage_transaction_iterator_removed_items_from_base() {
         let mut base = Box::new(MemoryStorage::new());
         base.set(b"foo", b"bar");

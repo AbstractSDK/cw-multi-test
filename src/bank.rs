@@ -5,8 +5,8 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 
 use cosmwasm_std::{
-    coin, to_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankMsg, BankQuery, Binary,
-    BlockInfo, Coin, Event, Order, Querier, StdResult, Storage, SupplyResponse, Uint128,
+    coin, to_json_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankMsg, BankQuery,
+    Binary, BlockInfo, Coin, Event, Querier, Storage,
 };
 use cw_storage_plus::Map;
 use cw_utils::NativeBalance;
@@ -15,6 +15,8 @@ use crate::app::CosmosRouter;
 use crate::executor::AppResponse;
 use crate::module::Module;
 use crate::prefixed_storage::{prefixed, prefixed_read};
+#[cfg(feature = "cosmwasm_1_1")]
+use cosmwasm_std::{Order, StdResult, SupplyResponse, Uint128};
 
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::query::AllQuerier;
@@ -43,8 +45,9 @@ impl BankKeeper {
         BankKeeper::default()
     }
 
-    pub fn set_remote(&mut self, remote: RemoteChannel) {
+    pub fn with_remote(mut self, remote: RemoteChannel) -> Self {
         self.remote = Some(remote);
+        self
     }
 
     // this is an "admin" function to let us adjust bank accounts in genesis
@@ -82,6 +85,7 @@ impl BankKeeper {
         }
     }
 
+    #[cfg(feature = "cosmwasm_1_1")]
     fn get_supply(&self, bank_storage: &dyn Storage, denom: String) -> AnyResult<Coin> {
         let supply: Uint128 = BALANCES
             .range(bank_storage, None, None, Order::Ascending)
@@ -226,7 +230,7 @@ impl Module for BankKeeper {
                 let address = api.addr_validate(&address)?;
                 let amount = self.get_balance(&bank_storage, &address)?;
                 let res = AllBalanceResponse { amount };
-                Ok(to_binary(&res)?)
+                Ok(to_json_binary(&res)?)
             }
             BankQuery::Balance { address, denom } => {
                 let address = api.addr_validate(&address)?;
@@ -236,13 +240,14 @@ impl Module for BankKeeper {
                     .find(|c| c.denom == denom)
                     .unwrap_or_else(|| coin(0, denom));
                 let res = BalanceResponse { amount };
-                Ok(to_binary(&res)?)
+                Ok(to_json_binary(&res)?)
             }
+            #[cfg(feature = "cosmwasm_1_1")]
             BankQuery::Supply { denom } => {
                 let amount = self.get_supply(&bank_storage, denom)?;
                 let mut res = SupplyResponse::default();
                 res.amount = amount;
-                Ok(to_binary(&res)?)
+                Ok(to_json_binary(&res)?)
             }
             q => bail!("Unsupported bank query: {:?}", q),
         }

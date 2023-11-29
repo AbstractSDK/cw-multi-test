@@ -1,19 +1,15 @@
+use cosmwasm_std::Storage;
+use cosmwasm_std::{Order, Record};
+use length_prefixed::to_length_prefixed_nested;
+use namespace_helpers::{get_with_prefix, range_with_prefix, remove_with_prefix, set_with_prefix};
+
 mod length_prefixed;
 mod namespace_helpers;
 
-use cosmwasm_std::Storage;
-#[cfg(feature = "iterator")]
-use cosmwasm_std::{Order, Record};
-
-use length_prefixed::to_length_prefixed_nested;
 pub use length_prefixed::{
     contract_namespace, decode_length, get_full_contract_storage_namespace, to_length_prefixed,
     CONTRACT_STORAGE_PREFIX,
 };
-
-#[cfg(feature = "iterator")]
-use namespace_helpers::range_with_prefix;
-use namespace_helpers::{get_with_prefix, remove_with_prefix, set_with_prefix};
 
 /// An alias of PrefixedStorage::new for less verbose usage
 pub fn prefixed<'a>(storage: &'a mut dyn Storage, namespace: &[u8]) -> PrefixedStorage<'a> {
@@ -64,7 +60,6 @@ impl<'a> Storage for PrefixedStorage<'a> {
         remove_with_prefix(self.storage, &self.prefix, key);
     }
 
-    #[cfg(feature = "iterator")]
     /// range allows iteration over a set of keys, either forwards or backwards
     /// uses standard rust range notation, and eg db.range(b"foo"..b"bar") also works reverse
     fn range<'b>(
@@ -113,7 +108,6 @@ impl<'a> Storage for ReadonlyPrefixedStorage<'a> {
         unimplemented!();
     }
 
-    #[cfg(feature = "iterator")]
     /// range allows iteration over a set of keys, either forwards or backwards
     fn range<'b>(
         &'b self,

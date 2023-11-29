@@ -13,7 +13,7 @@ use cosmwasm_std::Coin;
 
 use cosmwasm_std::SystemError;
 
-use cosmwasm_std::from_slice;
+use cosmwasm_std::from_json;
 use cosmwasm_std::{ContractResult, Empty, SystemResult};
 use cosmwasm_std::{CustomQuery, QueryRequest};
 use cosmwasm_std::{FullDelegation, Validator};
@@ -102,7 +102,7 @@ impl<C: CustomQuery + DeserializeOwned> cosmwasm_vm::Querier for MockQuerier<C> 
         bin_request: &[u8],
         _gas_limit: u64,
     ) -> BackendResult<SystemResult<ContractResult<Binary>>> {
-        let request: QueryRequest<C> = match from_slice(bin_request) {
+        let request: QueryRequest<C> = match from_json(bin_request) {
             Ok(v) => v,
             Err(e) => {
                 return (

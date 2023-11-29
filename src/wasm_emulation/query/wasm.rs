@@ -11,12 +11,10 @@ use crate::wasm_emulation::output::WasmRunnerOutput;
 use cosmwasm_std::testing::mock_env;
 use cosmwasm_vm::GasInfo;
 
-use cosmwasm_std::{to_binary, Addr, ContractInfoResponse, SystemError, SystemResult};
+use cosmwasm_std::{to_json_binary, Addr, ContractInfoResponse, SystemError, SystemResult};
 use cosmwasm_std::{ContractResult, Empty};
 
 use cosmwasm_std::WasmQuery;
-#[cfg(feature = "cosmwasm_1_2")]
-use sha2::{Digest, Sha256};
 
 use crate::wasm_emulation::channel::RemoteChannel;
 
@@ -51,7 +49,7 @@ impl WasmQuerier {
                 response.creator = data.creator.to_string();
                 response.admin = data.admin.map(|a| a.to_string());
                 (
-                    SystemResult::Ok(to_binary(&response).into()),
+                    SystemResult::Ok(to_json_binary(&response).into()),
                     GasInfo::with_externally_used(GAS_COST_CONTRACT_INFO),
                 )
             }
@@ -148,15 +146,13 @@ impl WasmQuerier {
                     let mut res = cosmwasm_std::CodeInfoResponse::default();
                     res.code_id = *code_id;
                     res.creator = code_data.creator.to_string();
-                    res.checksum = cosmwasm_std::HexBinary::from(
-                        Sha256::digest(format!("contract code {}", code_data.seed)).to_vec(),
-                    );
+                    res.checksum = code_data.checksum.clone();
                     res
                 } else {
                     WasmRemoteQuerier::code_info(self.remote.clone(), *code_id).unwrap()
                 };
                 (
-                    SystemResult::Ok(to_binary(&res).into()),
+                    SystemResult::Ok(to_json_binary(&res).into()),
                     GasInfo::with_externally_used(GAS_COST_CONTRACT_INFO),
                 )
             }

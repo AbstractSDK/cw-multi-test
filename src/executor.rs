@@ -1,13 +1,12 @@
-use std::fmt;
-
+use crate::error::AnyResult;
 use cosmwasm_std::{
-    to_binary, Addr, Attribute, BankMsg, Binary, Coin, CosmosMsg, Event, SubMsgResponse, WasmMsg,
+    to_json_binary, Addr, Attribute, BankMsg, Binary, Coin, CosmosMsg, Event, SubMsgResponse,
+    WasmMsg,
 };
 use cw_utils::{parse_execute_response_data, parse_instantiate_response_data};
 use schemars::JsonSchema;
 use serde::Serialize;
-
-use anyhow::Result as AnyResult;
+use std::fmt::Debug;
 
 #[derive(Default, Clone, Debug)]
 pub struct AppResponse {
@@ -62,7 +61,7 @@ impl From<SubMsgResponse> for AppResponse {
 
 pub trait Executor<C>
 where
-    C: Clone + fmt::Debug + PartialEq + JsonSchema + 'static,
+    C: Clone + Debug + PartialEq + JsonSchema + 'static,
 {
     /// Runs arbitrary CosmosMsg.
     /// This will create a cache before the execution, so no state changes are persisted if this
@@ -81,7 +80,7 @@ where
         admin: Option<String>,
     ) -> AnyResult<Addr> {
         // instantiate contract
-        let init_msg = to_binary(init_msg)?;
+        let init_msg = to_json_binary(init_msg)?;
         let msg = WasmMsg::Instantiate {
             admin,
             code_id,
@@ -94,17 +93,51 @@ where
         Ok(Addr::unchecked(data.contract_address))
     }
 
+    /// Instantiates a new contract and returns its predictable address.
+    /// This is a helper function around [execute][Self::execute] function
+    /// with `WasmMsg::Instantiate2` message.
+    #[cfg(feature = "cosmwasm_1_2")]
+    fn instantiate2_contract<M, L, A, S>(
+        &mut self,
+        code_id: u64,
+        sender: Addr,
+        init_msg: &M,
+        funds: &[Coin],
+        label: L,
+        admin: A,
+        salt: S,
+    ) -> AnyResult<Addr>
+    where
+        M: Serialize,
+        L: Into<String>,
+        A: Into<Option<String>>,
+        S: Into<Binary>,
+    {
+        let msg = WasmMsg::Instantiate2 {
+            admin: admin.into(),
+            code_id,
+            msg: to_json_binary(init_msg)?,
+            funds: funds.to_vec(),
+            label: label.into(),
+            salt: salt.into(),
+        };
+        let execute_response = self.execute(sender, msg.into())?;
+        let instantiate_response =
+            parse_instantiate_response_data(execute_response.data.unwrap_or_default().as_slice())?;
+        Ok(Addr::unchecked(instantiate_response.contract_address))
+    }
+
     /// Execute a contract and process all returned messages.
     /// This is just a helper around execute(),
     /// but we parse out the data field to that what is returned by the contract (not the protobuf wrapper)
-    fn execute_contract<T: Serialize + std::fmt::Debug>(
+    fn execute_contract<T: Serialize + Debug>(
         &mut self,
         sender: Addr,
         contract_addr: Addr,
         msg: &T,
         send_funds: &[Coin],
     ) -> AnyResult<AppResponse> {
-        let binary_msg = to_binary(msg)?;
+        let binary_msg = to_json_binary(msg)?;
         let wrapped_msg = WasmMsg::Execute {
             contract_addr: contract_addr.into_string(),
             msg: binary_msg,
@@ -126,7 +159,7 @@ where
         msg: &T,
         new_code_id: u64,
     ) -> AnyResult<AppResponse> {
-        let msg = to_binary(msg)?;
+        let msg = to_json_binary(msg)?;
         let msg = WasmMsg::Migrate {
             contract_addr: contract_addr.into(),
             msg,

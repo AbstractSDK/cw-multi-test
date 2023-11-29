@@ -1,41 +1,38 @@
 [package]
 name = "cw-multi-test"
-version = "0.16.7"
+version = "0.19.0"
 authors = ["Ethan Frey <ethanfrey@users.noreply.github.com>"]
 edition = "2021"
-description = "Test helpers for multi-contract interactions"
+description = "Testing tools for multi-contract interactions"
 license = "Apache-2.0"
 repository = "https://github.com/CosmWasm/cw-multi-test"
 homepage = "https://cosmwasm.com"
 
 [features]
-default = ["iterator", "staking", "cosmwasm_1_2"]
-iterator = ["cosmwasm-std/iterator"]
-stargate = ["cosmwasm-std/stargate"]
-staking = ["cosmwasm-std/staking"]
+default = []
 backtrace = ["anyhow/backtrace"]
 cosmwasm_1_1 = ["cosmwasm-std/cosmwasm_1_1"]
 cosmwasm_1_2 = ["cosmwasm_1_1", "cosmwasm-std/cosmwasm_1_2"]
 cosmwasm_1_3 = ["cosmwasm_1_2", "cosmwasm-std/cosmwasm_1_3"]
-# This experimental feature enables stable API to be released in version 1.0 of Multi Test.
-# We created this feature to provide as soon as possible a deeper insight into the Multi Test API 1.0.
-# Until version 1.0 of Multi Test is officially released, please consider this feature as experimental
-# and a subject to change at any time.
-# DO NOT enable this feature while testing production ready smart contracts.
-multitest_api_1_0 = []
+cosmwasm_1_4 = ["cosmwasm_1_3", "cosmwasm-std/cosmwasm_1_4"]
 
 [dependencies]
-cw-utils = "1.0"
-cw-storage-plus = "1.1"
-cosmwasm-std = { version = "1.3", features = ["staking", "stargate"] }
-itertools = "0.11"
-schemars = "0.8"
-serde = { version = "1.0", default-features = false, features = ["derive"] }
-prost = "0.11"
-anyhow = "1.0"
-thiserror = "1.0"
-derivative = "2"
-sha2 = "0.10"
+anyhow = "1.0.75"
+bech32 = "0.9.1"
+cosmwasm-std = { version = "1.5.0", features = [
+    "iterator",
+    "staking",
+    "stargate",
+] }
+cw-storage-plus = "1.2.0"
+cw-utils = "1.0.3"
+derivative = "2.2.0"
+itertools = "0.12.0"
+prost = "0.12.3"
+schemars = "0.8.16"
+serde = "1.0.193"
+sha2 = "0.10.8"
+thiserror = "1.0.50"
 
 # We don't use the following dependencies directly. They're dependencies of our dependencies.
 # We specify them to tighten their version requirements so that builds with `-Zminimal-versions` work.
@@ -65,7 +62,6 @@ lazy_static = "1.4.0"
 log = "0.4.19"
 env_logger = "0.10.0"
 cosmwasm-schema = "1.2.7"
-bech32 = "0.9.1"
 treediff = { version = "4.0.2", features = ["with-rustc-serialize"] }
 rustc-serialize = "0.3.24"
 serde_json = "1.0.105"
@@ -76,12 +72,9 @@ serde_json = "1.0.105"
 serde_json = "1.0.105"
 
 dotenv = "0.15.0"
-
-# Abstract
-# abstract-interface = {verion="0.16.1", git="https://github.com/AbstractSDK/contracts.git"}
-# abstract-core = {verion="0.16.1", git="https://github.com/AbstractSDK/contracts.git"}
-# abstract-dex-adapter = { git = "https://github.com/AbstractSDK/adapters.git", default-features = false }
-hex = "0.4.3"
 cw-asset = "3.0.0"
+hex = "0.4.3"
+hex-literal = "0.4.1"
+once_cell = "1.18.0"
 
 moneymarket = { git = "https://github.com/CavernPerson/money-market-contracts" }
