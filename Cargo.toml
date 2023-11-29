@@ -24,7 +24,7 @@ cosmwasm-std = { version = "1.5.0", features = [
     "staking",
     "stargate",
 ] }
-cw-storage-plus = "1.2.0"
+cw-storage-plus = "1.1.0"
 cw-utils = "1.0.3"
 derivative = "2.2.0"
 itertools = "0.12.0"
