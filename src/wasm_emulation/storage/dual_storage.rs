@@ -46,7 +46,7 @@ use std::collections::HashSet;
 use anyhow::Result as AnyResult;
 const DISTANT_LIMIT: u64 = 5u64;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 struct DistantIter {
     data: Vec<Model>,
     position: usize,
@@ -57,7 +57,7 @@ struct DistantIter {
 }
 
 /// Iterator to get multiple keys
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 struct Iter {
     distant_iter: DistantIter,
     local_iter: u32,
@@ -158,7 +158,7 @@ impl Storage for DualStorage {
             .try_into()
             .expect("Found more iterator IDs than supported");
         let new_id = last_id + 1;
-        self.iterators.insert(new_id, iter);
+        self.iterators.insert(new_id, iter.clone());
 
         (Ok(new_id), gas_info)
     }
@@ -168,10 +168,11 @@ impl Storage for DualStorage {
         let iterator = match self.iterators.get_mut(&iterator_id) {
             Some(i) => i,
             None => {
+                println!("End next premature");
                 return (
                     Err(BackendError::iterator_does_not_exist(iterator_id)),
                     GasInfo::free(),
-                )
+                );
             }
         };
 
@@ -195,7 +196,26 @@ impl Storage for DualStorage {
                 ))
                 .unwrap();
 
-            iterator.distant_iter.data.extend(new_keys.models);
+            // We make sure the data queried correspond to all the keys we need
+            iterator
+                .distant_iter
+                .data
+                .extend(new_keys.models.into_iter().filter(|m| {
+                    let lower_than_end = if let Some(end) = iterator.distant_iter.end.clone() {
+                        !gte(m.key.clone(), end)
+                    } else {
+                        true
+                    };
+
+                    let higher_than_start = if let Some(start) = iterator.distant_iter.start.clone()
+                    {
+                        gte(m.key.clone(), start)
+                    } else {
+                        true
+                    };
+
+                    lower_than_end && higher_than_start
+                }));
             iterator.distant_iter.key = Some(new_keys.pagination.unwrap().next_key);
         }
 
