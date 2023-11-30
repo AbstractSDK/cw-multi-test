@@ -32,7 +32,7 @@ pub use crate::app::{custom_app, next_block, App, BasicApp, CosmosRouter, Router
 pub use crate::app_builder::{AppBuilder, BasicAppBuilder};
 pub use crate::bank::{Bank, BankKeeper, BankSudo};
 pub use crate::checksums::ChecksumGenerator;
-pub use crate::contracts::Contract;
+pub use crate::contracts::{Contract, ContractWrapper};
 pub use crate::executor::{AppResponse, Executor};
 pub use crate::gov::{Gov, GovAcceptingModule, GovFailingModule};
 pub use crate::ibc::{Ibc, IbcAcceptingModule, IbcFailingModule};
@@ -40,4 +40,4 @@ pub use crate::module::{AcceptingModule, FailingModule, Module};
 pub use crate::staking::{
     Distribution, DistributionKeeper, StakeKeeper, Staking, StakingInfo, StakingSudo,
 };
-pub use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo, LOCAL_CODE_OFFSET};
+pub use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};

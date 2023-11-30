@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::query::bank::BankQuerier;
 use crate::wasm_emulation::query::staking::StakingQuerier;
 use crate::wasm_emulation::query::wasm::WasmQuerier;
 
+use cosmwasm_std::Deps;
+use cosmwasm_std::Env;
 use cosmwasm_vm::BackendResult;
 use cosmwasm_vm::GasInfo;
 
@@ -14,7 +18,7 @@ use cosmwasm_std::Coin;
 use cosmwasm_std::SystemError;
 
 use cosmwasm_std::from_json;
-use cosmwasm_std::{ContractResult, Empty, SystemResult};
+use cosmwasm_std::{ContractResult, SystemResult};
 use cosmwasm_std::{CustomQuery, QueryRequest};
 use cosmwasm_std::{FullDelegation, Validator};
 
@@ -25,6 +29,18 @@ use crate::wasm_emulation::input::QuerierStorage;
 
 use super::gas::GAS_COST_QUERY_ERROR;
 
+#[derive(Clone)]
+pub struct ForkState<QueryC>
+where
+    QueryC: CustomQuery + DeserializeOwned + 'static,
+{
+    pub remote: RemoteChannel,
+    /// Only query function right now, but we might pass along the whole application state to avoid stargate queries
+    pub local_state:
+        HashMap<usize, fn(Deps<QueryC>, Env, Vec<u8>) -> Result<Binary, anyhow::Error>>,
+    pub querier_storage: QuerierStorage,
+}
+
 pub type QueryResultWithGas = (QuerierResult, GasInfo);
 
 /// The same type as cosmwasm-std's QuerierResult, but easier to reuse in
@@ -33,29 +49,34 @@ pub type MockQuerierCustomHandlerResult = SystemResult<ContractResult<Binary>>;
 
 /// MockQuerier holds an immutable table of bank balances
 /// and configurable handlers for Wasm queries and custom queries.
-pub struct MockQuerier<C: DeserializeOwned = Empty> {
+pub struct MockQuerier<QueryC: CustomQuery + DeserializeOwned + 'static> {
     bank: BankQuerier,
 
     staking: StakingQuerier,
-    wasm: WasmQuerier,
+    wasm: WasmQuerier<QueryC>,
+    query_fn: HashMap<usize, fn(Deps<'_, QueryC>, Env, Vec<u8>) -> Result<Binary, anyhow::Error>>,
+
+    //Box<dyn Fn(Deps<'_, C>, Env, Vec<u8>) -> Result<Binary, anyhow::Error>>, //fn(deps: Deps<C>, env: Env, msg: Vec<u8>) -> Result<Binary, anyhow::Error>,
     /// A handler to handle custom queries. This is set to a dummy handler that
     /// always errors by default. Update it via `with_custom_handler`.
     ///
     /// Use box to avoid the need of another generic type
-    custom_handler: Box<dyn for<'a> Fn(&'a C) -> QueryResultWithGas>,
+    custom_handler: Box<dyn for<'a> Fn(&'a QueryC) -> QueryResultWithGas>,
     remote: RemoteChannel,
 }
 
-impl<C: DeserializeOwned> MockQuerier<C> {
-    pub fn new(remote: RemoteChannel, storage: Option<QuerierStorage>) -> Self {
+impl<QueryC: CustomQuery + DeserializeOwned + 'static> MockQuerier<QueryC> {
+    pub fn new(fork_state: ForkState<QueryC>) -> Self {
+        // We create query_closures for all local_codes
+
         MockQuerier {
             bank: BankQuerier::new(
-                remote.clone(),
-                storage.as_ref().map(|storage| storage.bank.storage.clone()),
+                fork_state.remote.clone(),
+                fork_state.querier_storage.bank.storage.clone(),
             ),
 
             staking: StakingQuerier::default(),
-            wasm: WasmQuerier::new(remote.clone(), storage),
+            wasm: WasmQuerier::new(fork_state.clone()),
             // strange argument notation suggested as a workaround here: https://github.com/rust-lang/rust/issues/41078#issuecomment-294296365
             custom_handler: Box::from(|_: &_| -> QueryResultWithGas {
                 (
@@ -65,7 +86,8 @@ impl<C: DeserializeOwned> MockQuerier<C> {
                     GasInfo::free(),
                 )
             }),
-            remote,
+            query_fn: fork_state.local_state.clone(),
+            remote: fork_state.remote,
         }
     }
 
@@ -89,20 +111,22 @@ impl<C: DeserializeOwned> MockQuerier<C> {
 
     pub fn with_custom_handler<CH: 'static>(mut self, handler: CH) -> Self
     where
-        CH: Fn(&C) -> QueryResultWithGas,
+        CH: Fn(&QueryC) -> QueryResultWithGas,
     {
         self.custom_handler = Box::from(handler);
         self
     }
 }
 
-impl<C: CustomQuery + DeserializeOwned> cosmwasm_vm::Querier for MockQuerier<C> {
+impl<QueryC: CustomQuery + DeserializeOwned + 'static> cosmwasm_vm::Querier
+    for MockQuerier<QueryC>
+{
     fn query_raw(
         &self,
         bin_request: &[u8],
         _gas_limit: u64,
     ) -> BackendResult<SystemResult<ContractResult<Binary>>> {
-        let request: QueryRequest<C> = match from_json(bin_request) {
+        let request: QueryRequest<QueryC> = match from_json(bin_request) {
             Ok(v) => v,
             Err(e) => {
                 return (
@@ -120,8 +144,27 @@ impl<C: CustomQuery + DeserializeOwned> cosmwasm_vm::Querier for MockQuerier<C> 
     }
 }
 
-impl<C: CustomQuery + DeserializeOwned> MockQuerier<C> {
-    pub fn handle_query(&self, request: &QueryRequest<C>) -> QueryResultWithGas {
+impl<QueryC: CustomQuery + DeserializeOwned + 'static> cosmwasm_std::Querier
+    for MockQuerier<QueryC>
+{
+    fn raw_query(&self, bin_request: &[u8]) -> SystemResult<ContractResult<Binary>> {
+        let request: QueryRequest<QueryC> = match from_json(bin_request) {
+            Ok(v) => v,
+            Err(e) => {
+                return SystemResult::Err(SystemError::InvalidRequest {
+                    error: format!("Parsing query request: {}", e),
+                    request: bin_request.into(),
+                })
+            }
+        };
+        let result = self.handle_query(&request);
+
+        result.0
+    }
+}
+
+impl<QueryC: CustomQuery + DeserializeOwned + 'static> MockQuerier<QueryC> {
+    pub fn handle_query(&self, request: &QueryRequest<QueryC>) -> QueryResultWithGas {
         match &request {
             QueryRequest::Bank(bank_query) => self.bank.query(bank_query),
             QueryRequest::Custom(custom_query) => (*self.custom_handler)(custom_query),

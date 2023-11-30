@@ -143,6 +143,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
 where
     CustomT: Module,
     WasmT: Wasm<CustomT::ExecT, CustomT::QueryT>,
+    CustomT::QueryT: CustomQuery,
 {
     /// Overwrites the default wasm executor.
     ///

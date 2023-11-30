@@ -61,6 +61,11 @@ pub struct InstantiateMsg {
 pub fn test() -> anyhow::Result<()> {
     env_logger::init();
 
+    let sender = "terra1ytj0hhw39j88qsx4yapsr6ker83jv3aj354gmj";
+    let market = "terra1zqlcp3aty4p4rjv96h6qdascdn953v6crhwedu5vddxjnp349upscluex6";
+    let currency = "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4";
+    let a_currency = "terra1gwdxyqtu75es0x5l6cd9flqhh87zjtj7qdankayyr0vtt7s9w4ssm7ds8m";
+
     let runtime = Runtime::new()?;
     let chain = PHOENIX_1;
     let remote_channel = RemoteChannel::new(&runtime, chain.clone())?;
@@ -84,12 +89,7 @@ pub fn test() -> anyhow::Result<()> {
         })
         .with_api(MockApiBech32::new(chain.network_info.pub_address_prefix));
     let mut app = app.build(|_, _, _| {})?;
-
     // Then we send a message to the blockchain through the app
-    let sender = "terra1ytj0hhw39j88qsx4yapsr6ker83jv3aj354gmj";
-    let market = "terra1zqlcp3aty4p4rjv96h6qdascdn953v6crhwedu5vddxjnp349upscluex6";
-    let currency = "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4";
-    let a_currency = "terra1gwdxyqtu75es0x5l6cd9flqhh87zjtj7qdankayyr0vtt7s9w4ssm7ds8m";
 
     // We query to verify the state changed
     let response: BalanceResponse = app
@@ -133,7 +133,7 @@ pub fn test() -> anyhow::Result<()> {
     .unwrap();
     let counter_contract = WasmContract::new_local(code);
 
-    let code_id = app.store_code(counter_contract);
+    let code_id = app.store_wasm_code(counter_contract);
 
     // We try to instantiate a new contract. Should work ok !
     let contract_addr = app.instantiate_contract(

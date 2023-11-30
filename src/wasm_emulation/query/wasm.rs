@@ -1,48 +1,61 @@
+use std::marker::PhantomData;
+
 use crate::prefixed_storage::get_full_contract_storage_namespace;
 use crate::queries::wasm::WasmRemoteQuerier;
-use crate::wasm_emulation::query::gas::{GAS_COST_CONTRACT_INFO, GAS_COST_RAW_COSMWASM_QUERY};
+use crate::wasm_emulation::query::gas::{
+    GAS_COST_ALL_QUERIES, GAS_COST_CONTRACT_INFO, GAS_COST_RAW_COSMWASM_QUERY,
+};
 use crate::wasm_emulation::query::mock_querier::QueryResultWithGas;
+use crate::wasm_emulation::query::MockQuerier;
+use crate::Contract;
 
 use crate::wasm_emulation::contract::WasmContract;
-use crate::wasm_emulation::input::QuerierStorage;
 use crate::wasm_emulation::input::WasmFunction;
+use crate::wasm_emulation::input::{BankStorage, QuerierStorage, WasmStorage};
 use crate::wasm_emulation::output::WasmOutput;
 use crate::wasm_emulation::output::WasmRunnerOutput;
-use cosmwasm_std::testing::mock_env;
+use cosmwasm_std::testing::{mock_dependencies, mock_env, MockApi, MockStorage};
 use cosmwasm_vm::GasInfo;
 
-use cosmwasm_std::{to_json_binary, Addr, ContractInfoResponse, SystemError, SystemResult};
+use cosmwasm_std::{
+    to_json_binary, Addr, ContractInfoResponse, CustomQuery, OwnedDeps, Storage, SystemError,
+    SystemResult,
+};
 use cosmwasm_std::{ContractResult, Empty};
 
 use cosmwasm_std::WasmQuery;
+use serde::de::DeserializeOwned;
 
 use crate::wasm_emulation::channel::RemoteChannel;
 
 use crate::wasm_emulation::input::{InstanceArguments, QueryArgs};
 
-pub struct WasmQuerier {
-    current_storage: QuerierStorage,
-    remote: RemoteChannel,
+use super::mock_querier::ForkState;
+
+pub struct WasmQuerier<QueryC: CustomQuery + DeserializeOwned + 'static> {
+    fork_state: ForkState<QueryC>,
 }
 
-impl WasmQuerier {
-    pub fn new(remote: RemoteChannel, storage: Option<QuerierStorage>) -> Self {
-        Self {
-            current_storage: storage.unwrap_or(Default::default()),
-            remote,
-        }
+impl<QueryC: CustomQuery + DeserializeOwned + 'static> WasmQuerier<QueryC> {
+    pub fn new(fork_state: ForkState<QueryC>) -> Self {
+        Self { fork_state }
     }
 
     pub fn query(&self, remote: RemoteChannel, request: &WasmQuery) -> QueryResultWithGas {
         match request {
             WasmQuery::ContractInfo { contract_addr } => {
                 let addr = Addr::unchecked(contract_addr);
-                let data = if let Some(local_contract) =
-                    self.current_storage.wasm.contracts.get(contract_addr)
+                let data = if let Some(local_contract) = self
+                    .fork_state
+                    .querier_storage
+                    .wasm
+                    .contracts
+                    .get(contract_addr)
                 {
                     local_contract.clone()
                 } else {
-                    WasmRemoteQuerier::load_distant_contract(self.remote.clone(), &addr).unwrap()
+                    WasmRemoteQuerier::load_distant_contract(self.fork_state.remote.clone(), &addr)
+                        .unwrap()
                 };
                 let mut response = ContractInfoResponse::default();
                 response.code_id = data.code_id;
@@ -60,7 +73,8 @@ impl WasmQuerier {
                 total_key.extend_from_slice(key);
 
                 let value: Vec<u8> = if let Some(value) = self
-                    .current_storage
+                    .fork_state
+                    .querier_storage
                     .wasm
                     .storage
                     .iter()
@@ -79,39 +93,77 @@ impl WasmQuerier {
             }
             WasmQuery::Smart { contract_addr, msg } => {
                 let addr = Addr::unchecked(contract_addr);
-                // If the contract is already defined in our storage, we load it from there
-                let contract = if let Some(local_contract) =
-                    self.current_storage.wasm.contracts.get(contract_addr)
+                println!("Trying to query {:?}", contract_addr);
+
+                let mut storage = MockStorage::default();
+                // Set the storage
+                for (key, value) in self
+                    .fork_state
+                    .querier_storage
+                    .wasm
+                    .get_contract_storage(&addr)
                 {
-                    if let Some(code_info) = self
-                        .current_storage
+                    storage.set(&key, &value);
+                }
+
+                let deps = OwnedDeps {
+                    storage,
+                    api: MockApi::default(),
+                    querier: MockQuerier::new(self.fork_state.clone()),
+                    custom_query_type: PhantomData::<QueryC>,
+                };
+                let env = mock_env();
+
+                let result = if let Some(local_contract) = self
+                    .fork_state
+                    .querier_storage
+                    .wasm
+                    .contracts
+                    .get(contract_addr)
+                {
+                    // If the contract data is already defined in our storage, we load it from there
+                    if let Some(code) = self
+                        .fork_state
+                        .querier_storage
                         .wasm
                         .codes
                         .get(&(local_contract.code_id as usize))
                     {
-                        // We execute the query
-                        code_info.clone()
+                        // Local Wasm Contract case
+                        <WasmContract as Contract<Empty, QueryC>>::query(
+                            code,
+                            deps.as_ref(),
+                            env,
+                            msg.to_vec(),
+                            self.fork_state.clone(),
+                        )
+                    } else if let Some(local_query) = self
+                        .fork_state
+                        .local_state
+                        .get(&(local_contract.code_id as usize))
+                    {
+                        // Local Rust Contract case
+                        local_query(deps.as_ref(), env, msg.to_vec())
                     } else {
-                        WasmContract::new_distant_code_id(local_contract.code_id)
+                        // Distant Registered Contract case
+                        <WasmContract as Contract<Empty, QueryC>>::query(
+                            &WasmContract::new_distant_code_id(local_contract.code_id),
+                            deps.as_ref(),
+                            env,
+                            msg.to_vec(),
+                            self.fork_state.clone(),
+                        )
                     }
                 } else {
-                    WasmContract::new_distant_contract(contract_addr.to_string())
+                    // Distant UnRegistered Contract case
+                    <WasmContract as Contract<Empty, QueryC>>::query(
+                        &WasmContract::new_distant_contract(contract_addr.to_string()),
+                        deps.as_ref(),
+                        env,
+                        msg.to_vec(),
+                        self.fork_state.clone(),
+                    )
                 };
-
-                let mut env = mock_env();
-                env.contract.address = addr.clone();
-                // Here we specify empty because we only car about the query result
-                let result: Result<WasmRunnerOutput<Empty>, _> = contract.run_contract(
-                    InstanceArguments {
-                        function: WasmFunction::Query(QueryArgs {
-                            env,
-                            msg: msg.to_vec(),
-                        }),
-                        querier_storage: self.current_storage.clone(),
-                        init_storage: self.current_storage.wasm.get_contract_storage(&addr),
-                    },
-                    self.remote.clone(),
-                );
 
                 let result = if let Err(e) = result {
                     return (
@@ -125,14 +177,9 @@ impl WasmQuerier {
                     result.unwrap()
                 };
 
-                let bin = match result.wasm {
-                    WasmOutput::Query(bin) => bin,
-                    _ => panic!("Unexpected contract response, not possible"),
-                };
-
                 (
-                    SystemResult::Ok(ContractResult::Ok(bin)),
-                    GasInfo::with_externally_used(result.gas_used),
+                    SystemResult::Ok(ContractResult::Ok(result)),
+                    GasInfo::with_externally_used(GAS_COST_ALL_QUERIES),
                 )
             }
             #[cfg(feature = "cosmwasm_1_2")]

@@ -5,10 +5,11 @@ use crate::module::Module;
 use crate::prefixed_storage::{prefixed, prefixed_read};
 use crate::queries::bank::BankRemoteQuerier;
 use crate::wasm_emulation::channel::RemoteChannel;
-use crate::wasm_emulation::query::AllQuerier;
+use crate::wasm_emulation::input::BankStorage;
+use crate::wasm_emulation::query::AllBankQuerier;
 use cosmwasm_std::{
     coin, to_json_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankMsg, BankQuery,
-    Binary, BlockInfo, Coin, Event, Querier, Storage,
+    Binary, BlockInfo, Coin, Event, Querier, Storage, Order,
 };
 #[cfg(feature = "cosmwasm_1_1")]
 use cosmwasm_std::{Order, StdResult, SupplyResponse, Uint128};
@@ -29,7 +30,10 @@ pub enum BankSudo {
     },
 }
 
-pub trait Bank: Module<ExecT = BankMsg, QueryT = BankQuery, SudoT = BankSudo> + AllQuerier {}
+pub trait Bank:
+    Module<ExecT = BankMsg, QueryT = BankQuery, SudoT = BankSudo> + AllBankQuerier
+{
+}
 
 #[derive(Default)]
 pub struct BankKeeper {
@@ -246,5 +250,15 @@ impl Module for BankKeeper {
             }
             q => bail!("Unsupported bank query: {:?}", q),
         }
+    }
+}
+
+impl AllBankQuerier for BankKeeper {
+    fn query_all(&self, storage: &dyn Storage) -> AnyResult<BankStorage> {
+        let bank_storage = prefixed_read(storage, NAMESPACE_BANK);
+        let balances: Result<Vec<_>, _> = BALANCES
+            .range(&bank_storage, None, None, Order::Ascending)
+            .collect();
+        Ok(BankStorage { storage: balances? })
     }
 }

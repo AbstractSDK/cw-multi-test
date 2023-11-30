@@ -7,7 +7,7 @@ use cw_orch_daemon::queriers::DaemonQuerier;
 use crate::{
     bank::{BALANCES, NAMESPACE_BANK},
     prefixed_storage::prefixed_read,
-    wasm_emulation::{channel::RemoteChannel, input::BankStorage, query::AllQuerier},
+    wasm_emulation::{channel::RemoteChannel, input::BankStorage},
     BankKeeper,
 };
 
@@ -31,16 +31,5 @@ impl BankRemoteQuerier {
             })
             .unwrap();
         Ok(distant_amounts)
-    }
-}
-
-impl AllQuerier for BankKeeper {
-    type Output = BankStorage;
-    fn query_all(&self, storage: &dyn Storage) -> AnyResult<BankStorage> {
-        let bank_storage = prefixed_read(storage, NAMESPACE_BANK);
-        let balances: Result<Vec<_>, _> = BALANCES
-            .range(&bank_storage, None, None, Order::Ascending)
-            .collect();
-        Ok(BankStorage { storage: balances? })
     }
 }
