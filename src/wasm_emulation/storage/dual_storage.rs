@@ -194,7 +194,7 @@ impl Storage for DualStorage {
                         reverse: iterator.distant_iter.reverse,
                     }),
                 ))
-                .unwrap();
+                .unwrap_or_default();
 
             // We make sure the data queried correspond to all the keys we need
             iterator
@@ -216,7 +216,7 @@ impl Storage for DualStorage {
 
                     lower_than_end && higher_than_start
                 }));
-            iterator.distant_iter.key = Some(new_keys.pagination.unwrap().next_key);
+            iterator.distant_iter.key = new_keys.pagination.map(|p| p.next_key);
         }
 
         // 2. We find the first key in order between distant and local storage
