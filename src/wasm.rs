@@ -10,7 +10,7 @@ use crate::queries::wasm::WasmRemoteQuerier;
 use crate::transactions::transactional;
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::contract::WasmContract;
-use crate::wasm_emulation::input::{BankStorage, QuerierStorage, WasmStorage};
+use crate::wasm_emulation::input::QuerierStorage;
 use crate::wasm_emulation::query::mock_querier::ForkState;
 use crate::wasm_emulation::query::AllWasmQuerier;
 use cosmwasm_std::testing::mock_wasmd_attr;
@@ -26,7 +26,6 @@ use prost::Message;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -264,7 +263,6 @@ where
             querier_storage,
         )?;
         let (res, msgs) = self.build_app_response(&contract, custom_event, res);
-        let querier_storage = router.get_querier_storage(storage)?;
         self.process_response(api, router, storage, block, contract, res, msgs)
     }
 
@@ -330,7 +328,7 @@ where
 }
 
 pub enum ContractBox<'a, ExecC, QueryC> {
-    Borrowed(Box<&'a dyn Contract<ExecC, QueryC>>),
+    Borrowed(&'a dyn Contract<ExecC, QueryC>),
     Owned(Box<dyn Contract<ExecC, QueryC>>),
 }
 
@@ -363,9 +361,9 @@ where
         let code_data = self.code_data(code_id)?;
         let code = self.code_base.get(&code_data.code_base_id);
         if let Some(code) = code {
-            Ok(ContractBox::Borrowed(Box::new(code)))
+            Ok(ContractBox::Borrowed(code))
         } else if let Some(rust_code) = self.rust_codes.get(&code_data.code_base_id) {
-            Ok(ContractBox::Borrowed(Box::new(&*rust_code.contract)))
+            Ok(ContractBox::Borrowed(&*rust_code.contract))
         } else {
             let wasm_contract = WasmContract::new_distant_code_id(code_id);
             Ok(ContractBox::Owned(Box::new(wasm_contract)))
@@ -881,7 +879,6 @@ where
         let res = self.call_reply(contract.clone(), api, storage, router, block, reply)?;
         let (res, msgs) = self.build_app_response(&contract, custom_event, res);
 
-        let querier_storage = router.get_querier_storage(storage)?;
         self.process_response(api, router, storage, block, contract, res, msgs)
     }
 

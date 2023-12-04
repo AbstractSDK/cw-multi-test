@@ -8,10 +8,7 @@ use cosmwasm_std::{from_json, Addr, Binary, Deps, Empty, Env};
 use counter::msg::{ExecuteMsg, GetCountResponse, QueryMsg};
 use cw_multi_test::{
     addons::{MockAddressGenerator, MockApiBech32},
-    wasm_emulation::{
-        channel::RemoteChannel,
-        contract::{LocalWasmContract, WasmContract},
-    },
+    wasm_emulation::{channel::RemoteChannel, contract::WasmContract},
     App, AppBuilder, BankKeeper, ContractWrapper, Executor, WasmKeeper,
 };
 use cw_orch_networks::networks::PHOENIX_1;

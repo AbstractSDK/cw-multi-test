@@ -14,7 +14,7 @@ use cosmwasm_std::{
 use anyhow::Result as AnyResult;
 use serde::de::DeserializeOwned;
 
-use crate::wasm_emulation::{channel::RemoteChannel, query::mock_querier::ForkState};
+use crate::wasm_emulation::query::mock_querier::ForkState;
 use anyhow::{anyhow, bail};
 /// Interface to call into a [Contract].
 pub trait Contract<T, Q = Empty>
@@ -304,7 +304,7 @@ where
         msg: Vec<u8>,
         _fork_state: ForkState<Q>,
     ) -> AnyResult<Response<C>> {
-        let msg: T1 = from_json(&msg)?;
+        let msg: T1 = from_json(msg)?;
         (self.execute_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
     }
 
@@ -316,7 +316,7 @@ where
         msg: Vec<u8>,
         _fork_state: ForkState<Q>,
     ) -> AnyResult<Response<C>> {
-        let msg: T2 = from_json(&msg)?;
+        let msg: T2 = from_json(msg)?;
         (self.instantiate_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
     }
 
@@ -327,7 +327,7 @@ where
         msg: Vec<u8>,
         _fork_state: ForkState<Q>,
     ) -> AnyResult<Binary> {
-        let msg: T3 = from_json(&msg)?;
+        let msg: T3 = from_json(msg)?;
         (self.query_fn)(deps, env, msg).map_err(|err| anyhow!(err))
     }
 
@@ -339,7 +339,7 @@ where
         msg: Vec<u8>,
         _fork_state: ForkState<Q>,
     ) -> AnyResult<Response<C>> {
-        let msg = from_json(&msg)?;
+        let msg = from_json(msg)?;
         match &self.sudo_fn {
             Some(sudo) => sudo(deps, env, msg).map_err(|err| anyhow!(err)),
             None => bail!("sudo not implemented for contract"),
@@ -368,7 +368,7 @@ where
         msg: Vec<u8>,
         _fork_state: ForkState<Q>,
     ) -> AnyResult<Response<C>> {
-        let msg = from_json(&msg)?;
+        let msg = from_json(msg)?;
         match &self.migrate_fn {
             Some(migrate) => migrate(deps, env, msg).map_err(|err| anyhow!(err)),
             None => bail!("migrate not implemented for contract"),
@@ -378,7 +378,6 @@ where
 
 #[cfg(test)]
 pub mod test {
-    use std::error::Error;
 
     use cosmwasm_std::{
         testing::{mock_dependencies, mock_env, mock_info},

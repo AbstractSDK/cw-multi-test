@@ -1,6 +1,6 @@
 use crate::wasm_emulation::api::RealApi;
 use crate::wasm_emulation::channel::RemoteChannel;
-use crate::wasm_emulation::input::{BankStorage, QuerierStorage, WasmStorage};
+use crate::wasm_emulation::input::QuerierStorage;
 use cosmwasm_std::CustomMsg;
 use cw_storage_plus::Item;
 
