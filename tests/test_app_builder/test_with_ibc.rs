@@ -1,8 +1,9 @@
 use crate::test_app_builder::{MyKeeper, NO_MESSAGE};
-use cosmwasm_std::{Addr, Empty, IbcMsg, IbcQuery, QueryRequest};
+use cosmwasm_std::{Addr, IbcMsg, IbcQuery, QueryRequest};
+use cw_multi_test::ibc::{types::MockIbcQuery, IbcPacketRelayingMsg};
 use cw_multi_test::{AppBuilder, Executor, Ibc};
 
-type MyIbcKeeper = MyKeeper<IbcMsg, IbcQuery, Empty>;
+type MyIbcKeeper = MyKeeper<IbcMsg, MockIbcQuery, IbcPacketRelayingMsg>;
 
 impl Ibc for MyIbcKeeper {}
 
