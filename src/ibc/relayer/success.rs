@@ -8,13 +8,11 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 
 use crate::{
-    ibc::types::Connection, App, AppResponse, Bank, Distribution, Gov, Ibc, Module, Staking,
-    SudoMsg, Wasm,
-};
-
-use super::{
-    types::{IbcPacketData, MockIbcQuery},
-    IbcPacketRelayingMsg,
+    ibc::{
+        types::{Connection, IbcPacketData, MockIbcQuery},
+        IbcPacketRelayingMsg,
+    },
+    App, AppResponse, Bank, Distribution, Gov, Ibc, Module, Staking, SudoMsg, Wasm,
 };
 
 #[derive(Debug)]
