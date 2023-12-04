@@ -12,7 +12,7 @@ use cosmwasm_std::{
     Binary, BlockInfo, Coin, Event, Order, Querier, Storage,
 };
 #[cfg(feature = "cosmwasm_1_1")]
-use cosmwasm_std::{Order, StdResult, SupplyResponse, Uint128};
+use cosmwasm_std::{StdResult, SupplyResponse, Uint128};
 use cw_storage_plus::Map;
 use cw_utils::NativeBalance;
 use itertools::Itertools;

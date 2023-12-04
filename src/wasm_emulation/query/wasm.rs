@@ -193,7 +193,8 @@ impl<
             #[cfg(feature = "cosmwasm_1_2")]
             WasmQuery::CodeInfo { code_id } => {
                 let code_data = self
-                    .current_storage
+                    .fork_state
+                    .querier_storage
                     .wasm
                     .code_data
                     .get(&(*code_id as usize));
@@ -204,7 +205,7 @@ impl<
                     res.checksum = code_data.checksum.clone();
                     res
                 } else {
-                    WasmRemoteQuerier::code_info(self.remote.clone(), *code_id).unwrap()
+                    WasmRemoteQuerier::code_info(self.fork_state.remote.clone(), *code_id).unwrap()
                 };
                 (
                     SystemResult::Ok(to_json_binary(&res).into()),
