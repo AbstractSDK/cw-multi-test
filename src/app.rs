@@ -12,7 +12,7 @@ use crate::ibc::Ibc;
 use crate::module::{FailingModule, Module};
 use crate::staking::{Distribution, DistributionKeeper, StakeKeeper, Staking, StakingSudo};
 use crate::transactions::transactional;
-use crate::wasm::{ContractData, RawQueryFunc, Wasm, WasmKeeper, WasmSudo};
+use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};
 use crate::wasm_emulation::contract::WasmContract;
 use crate::{AppBuilder, Contract, GovFailingModule, IbcFailingModule};
 use cosmwasm_std::testing::{MockApi, MockStorage};
@@ -247,13 +247,7 @@ where
 
     /// Registers contract code (like uploading wasm bytecode on a chain),
     /// so it can later be used to instantiate a contract.
-    pub fn store_code(
-        &mut self,
-        code: (
-            Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>,
-            RawQueryFunc<CustomT::QueryT>,
-        ),
-    ) -> u64 {
+    pub fn store_code(&mut self, code: Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>) -> u64 {
         self.init_modules(|router, _, _| {
             router
                 .wasm
@@ -272,10 +266,7 @@ where
     pub fn store_code_with_creator(
         &mut self,
         creator: Addr,
-        code: (
-            Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>,
-            RawQueryFunc<CustomT::QueryT>,
-        ),
+        code: Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>,
     ) -> u64 {
         self.init_modules(|router, _, _| router.wasm.store_code(creator, code))
     }
@@ -671,7 +662,7 @@ where
         panic!("Cannot sudo MockRouters");
     }
 
-    fn get_querier_storage(&self, storage: &dyn Storage) -> AnyResult<QuerierStorage> {
+    fn get_querier_storage(&self, _storage: &dyn Storage) -> AnyResult<QuerierStorage> {
         Ok(QuerierStorage::default())
     }
 }

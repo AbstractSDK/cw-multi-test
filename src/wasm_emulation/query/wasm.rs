@@ -10,34 +10,35 @@ use crate::wasm_emulation::query::MockQuerier;
 use crate::Contract;
 
 use crate::wasm_emulation::contract::WasmContract;
-use crate::wasm_emulation::input::WasmFunction;
-use crate::wasm_emulation::input::{BankStorage, QuerierStorage, WasmStorage};
-use crate::wasm_emulation::output::WasmOutput;
-use crate::wasm_emulation::output::WasmRunnerOutput;
-use cosmwasm_std::testing::{mock_dependencies, mock_env, MockApi, MockStorage};
+use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
 use cosmwasm_vm::GasInfo;
 
+use cosmwasm_std::ContractResult;
 use cosmwasm_std::{
-    to_json_binary, Addr, ContractInfoResponse, CustomQuery, OwnedDeps, Storage, SystemError,
-    SystemResult,
+    to_json_binary, Addr, ContractInfoResponse, CustomMsg, CustomQuery, OwnedDeps, Storage,
+    SystemError, SystemResult,
 };
-use cosmwasm_std::{ContractResult, Empty};
 
 use cosmwasm_std::WasmQuery;
 use serde::de::DeserializeOwned;
 
 use crate::wasm_emulation::channel::RemoteChannel;
 
-use crate::wasm_emulation::input::{InstanceArguments, QueryArgs};
-
 use super::mock_querier::ForkState;
 
-pub struct WasmQuerier<QueryC: CustomQuery + DeserializeOwned + 'static> {
-    fork_state: ForkState<QueryC>,
+pub struct WasmQuerier<
+    ExecC: CustomMsg + DeserializeOwned + 'static,
+    QueryC: CustomQuery + DeserializeOwned + 'static,
+> {
+    fork_state: ForkState<ExecC, QueryC>,
 }
 
-impl<QueryC: CustomQuery + DeserializeOwned + 'static> WasmQuerier<QueryC> {
-    pub fn new(fork_state: ForkState<QueryC>) -> Self {
+impl<
+        ExecC: CustomMsg + DeserializeOwned + 'static,
+        QueryC: CustomQuery + DeserializeOwned + 'static,
+    > WasmQuerier<ExecC, QueryC>
+{
+    pub fn new(fork_state: ForkState<ExecC, QueryC>) -> Self {
         Self { fork_state }
     }
 
@@ -130,23 +131,30 @@ impl<QueryC: CustomQuery + DeserializeOwned + 'static> WasmQuerier<QueryC> {
                         .get(&(local_contract.code_id as usize))
                     {
                         // Local Wasm Contract case
-                        <WasmContract as Contract<Empty, QueryC>>::query(
+                        <WasmContract as Contract<ExecC, QueryC>>::query(
                             code,
                             deps.as_ref(),
                             env,
                             msg.to_vec(),
                             self.fork_state.clone(),
                         )
-                    } else if let Some(local_query) = self
+                    } else if let Some(local_contract) = self
                         .fork_state
                         .local_state
                         .get(&(local_contract.code_id as usize))
                     {
                         // Local Rust Contract case
-                        local_query(deps.as_ref(), env, msg.to_vec())
+                        unsafe {
+                            local_contract.as_ref().unwrap().query(
+                                deps.as_ref(),
+                                env,
+                                msg.to_vec(),
+                                self.fork_state.clone(),
+                            )
+                        }
                     } else {
                         // Distant Registered Contract case
-                        <WasmContract as Contract<Empty, QueryC>>::query(
+                        <WasmContract as Contract<ExecC, QueryC>>::query(
                             &WasmContract::new_distant_code_id(local_contract.code_id),
                             deps.as_ref(),
                             env,
@@ -156,7 +164,7 @@ impl<QueryC: CustomQuery + DeserializeOwned + 'static> WasmQuerier<QueryC> {
                     }
                 } else {
                     // Distant UnRegistered Contract case
-                    <WasmContract as Contract<Empty, QueryC>>::query(
+                    <WasmContract as Contract<ExecC, QueryC>>::query(
                         &WasmContract::new_distant_contract(contract_addr.to_string()),
                         deps.as_ref(),
                         env,

@@ -28,7 +28,7 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        fork_state: ForkState<Q>,
+        fork_state: ForkState<T, Q>,
     ) -> AnyResult<Response<T>>;
 
     fn instantiate(
@@ -37,7 +37,7 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        fork_state: ForkState<Q>,
+        fork_state: ForkState<T, Q>,
     ) -> AnyResult<Response<T>>;
 
     fn query(
@@ -45,7 +45,7 @@ where
         deps: Deps<Q>,
         env: Env,
         msg: Vec<u8>,
-        fork_state: ForkState<Q>,
+        fork_state: ForkState<T, Q>,
     ) -> AnyResult<Binary>;
 
     fn sudo(
@@ -53,7 +53,7 @@ where
         deps: DepsMut<Q>,
         env: Env,
         msg: Vec<u8>,
-        fork_state: ForkState<Q>,
+        fork_state: ForkState<T, Q>,
     ) -> AnyResult<Response<T>>;
 
     fn reply(
@@ -61,7 +61,7 @@ where
         deps: DepsMut<Q>,
         env: Env,
         msg: Reply,
-        fork_state: ForkState<Q>,
+        fork_state: ForkState<T, Q>,
     ) -> AnyResult<Response<T>>;
 
     fn migrate(
@@ -69,7 +69,7 @@ where
         deps: DepsMut<Q>,
         env: Env,
         msg: Vec<u8>,
-        fork_state: ForkState<Q>,
+        fork_state: ForkState<T, Q>,
     ) -> AnyResult<Response<T>>;
 }
 
@@ -302,7 +302,7 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        _fork_state: ForkState<Q>,
+        _fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
         let msg: T1 = from_json(msg)?;
         (self.execute_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
@@ -314,7 +314,7 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        _fork_state: ForkState<Q>,
+        _fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
         let msg: T2 = from_json(msg)?;
         (self.instantiate_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
@@ -325,7 +325,7 @@ where
         deps: Deps<Q>,
         env: Env,
         msg: Vec<u8>,
-        _fork_state: ForkState<Q>,
+        _fork_state: ForkState<C, Q>,
     ) -> AnyResult<Binary> {
         let msg: T3 = from_json(msg)?;
         (self.query_fn)(deps, env, msg).map_err(|err| anyhow!(err))
@@ -337,7 +337,7 @@ where
         deps: DepsMut<Q>,
         env: Env,
         msg: Vec<u8>,
-        _fork_state: ForkState<Q>,
+        _fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
         let msg = from_json(msg)?;
         match &self.sudo_fn {
@@ -352,7 +352,7 @@ where
         deps: DepsMut<Q>,
         env: Env,
         reply_data: Reply,
-        _fork_state: ForkState<Q>,
+        _fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
         match &self.reply_fn {
             Some(reply) => reply(deps, env, reply_data).map_err(|err| anyhow!(err)),
@@ -366,7 +366,7 @@ where
         deps: DepsMut<Q>,
         env: Env,
         msg: Vec<u8>,
-        _fork_state: ForkState<Q>,
+        _fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
         let msg = from_json(msg)?;
         match &self.migrate_fn {
@@ -391,7 +391,7 @@ pub mod test {
     }
 
     fn query(deps: Deps, env: Env, _msg: Empty) -> StdResult<Binary> {
-        Ok(to_json_binary("resp")?)
+        to_json_binary("resp")
     }
 
     fn instantiate(deps: DepsMut, env: Env, info: MessageInfo, _msg: Empty) -> StdResult<Response> {

@@ -7,6 +7,7 @@ use crate::counter::{
 
 pub fn count(deps: Deps) -> StdResult<GetCountResponse> {
     let state = STATE.load(deps.storage)?;
+    println!("Getting the rust code count please");
     Ok(GetCountResponse { count: state.count })
 }
 

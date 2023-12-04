@@ -40,4 +40,4 @@ pub use crate::module::{AcceptingModule, FailingModule, Module};
 pub use crate::staking::{
     Distribution, DistributionKeeper, StakeKeeper, Staking, StakingInfo, StakingSudo,
 };
-pub use crate::wasm::{ContractData, RawQueryFunc, Wasm, WasmKeeper, WasmSudo};
+pub use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};

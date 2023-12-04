@@ -1,15 +1,10 @@
 use std::str::FromStr;
 
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{Addr, Coin, Order, Storage, Uint128};
+use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_orch_daemon::queriers::DaemonQuerier;
 
-use crate::{
-    bank::{BALANCES, NAMESPACE_BANK},
-    prefixed_storage::prefixed_read,
-    wasm_emulation::{channel::RemoteChannel, input::BankStorage},
-    BankKeeper,
-};
+use crate::wasm_emulation::channel::RemoteChannel;
 
 pub struct BankRemoteQuerier;
 

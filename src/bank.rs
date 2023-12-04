@@ -9,7 +9,7 @@ use crate::wasm_emulation::input::BankStorage;
 use crate::wasm_emulation::query::AllBankQuerier;
 use cosmwasm_std::{
     coin, to_json_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankMsg, BankQuery,
-    Binary, BlockInfo, Coin, Event, Querier, Storage, Order,
+    Binary, BlockInfo, Coin, Event, Order, Querier, Storage,
 };
 #[cfg(feature = "cosmwasm_1_1")]
 use cosmwasm_std::{Order, StdResult, SupplyResponse, Uint128};

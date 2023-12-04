@@ -114,9 +114,9 @@ impl WasmContract {
         Self::DistantCodeId(DistantCodeId { code_id })
     }
 
-    pub fn get_code<QueryC: CustomQuery + DeserializeOwned>(
+    pub fn get_code<ExecC: CustomMsg + 'static, QueryC: CustomQuery + DeserializeOwned>(
         &self,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Vec<u8>> {
         match self {
             WasmContract::Local(LocalWasmContract { code, .. }) => Ok(code.clone()),
@@ -151,7 +151,7 @@ impl WasmContract {
     >(
         &self,
         args: InstanceArguments,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<WasmRunnerOutput<ExecC>> {
         let InstanceArguments {
             function,
@@ -170,7 +170,7 @@ impl WasmContract {
                 address.to_string(),
                 Some(init_storage),
             )?,
-            querier: MockQuerier::<QueryC>::new(fork_state),
+            querier: MockQuerier::<ExecC, QueryC>::new(fork_state),
         };
         let options = InstanceOptions {
             gas_limit: DEFAULT_GAS_LIMIT,
@@ -229,7 +229,7 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         // We start by building the dependencies we will pass through the wasm executer
         let execute_args = InstanceArguments {
@@ -254,7 +254,7 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         // We start by building the dependencies we will pass through the wasm executer
         let instantiate_arguments = InstanceArguments {
@@ -278,7 +278,7 @@ where
         deps: Deps<QueryC>,
         env: Env,
         msg: Vec<u8>,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Binary> {
         // We start by building the dependencies we will pass through the wasm executer
         let query_arguments = InstanceArguments {
@@ -303,7 +303,7 @@ where
         deps: DepsMut<QueryC>,
         env: Env,
         msg: Vec<u8>,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         let sudo_args = InstanceArguments {
             function: WasmFunction::Sudo(SudoArgs { env, msg }),
@@ -327,7 +327,7 @@ where
         deps: DepsMut<QueryC>,
         env: Env,
         reply: Reply,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         let reply_args = InstanceArguments {
             function: WasmFunction::Reply(ReplyArgs { env, reply }),
@@ -351,7 +351,7 @@ where
         deps: DepsMut<QueryC>,
         env: Env,
         msg: Vec<u8>,
-        fork_state: ForkState<QueryC>,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         let migrate_args = InstanceArguments {
             function: WasmFunction::Migrate(MigrateArgs { env, msg }),

@@ -5,8 +5,7 @@ use crate::wasm_emulation::query::bank::BankQuerier;
 use crate::wasm_emulation::query::staking::StakingQuerier;
 use crate::wasm_emulation::query::wasm::WasmQuerier;
 
-use cosmwasm_std::Deps;
-use cosmwasm_std::Env;
+use cosmwasm_std::CustomMsg;
 use cosmwasm_vm::BackendResult;
 use cosmwasm_vm::GasInfo;
 
@@ -26,18 +25,19 @@ use cosmwasm_std::Attribute;
 use cosmwasm_std::QuerierResult;
 
 use crate::wasm_emulation::input::QuerierStorage;
+use crate::Contract;
 
 use super::gas::GAS_COST_QUERY_ERROR;
 
 #[derive(Clone)]
-pub struct ForkState<QueryC>
+pub struct ForkState<ExecC, QueryC>
 where
     QueryC: CustomQuery + DeserializeOwned + 'static,
+    ExecC: CustomMsg + 'static,
 {
     pub remote: RemoteChannel,
     /// Only query function right now, but we might pass along the whole application state to avoid stargate queries
-    pub local_state:
-        HashMap<usize, fn(Deps<QueryC>, Env, Vec<u8>) -> Result<Binary, anyhow::Error>>,
+    pub local_state: HashMap<usize, *mut dyn Contract<ExecC, QueryC>>,
     pub querier_storage: QuerierStorage,
 }
 
@@ -49,12 +49,14 @@ pub type MockQuerierCustomHandlerResult = SystemResult<ContractResult<Binary>>;
 
 /// MockQuerier holds an immutable table of bank balances
 /// and configurable handlers for Wasm queries and custom queries.
-pub struct MockQuerier<QueryC: CustomQuery + DeserializeOwned + 'static> {
+pub struct MockQuerier<
+    ExecC: CustomMsg + DeserializeOwned + 'static,
+    QueryC: CustomQuery + DeserializeOwned + 'static,
+> {
     bank: BankQuerier,
 
     staking: StakingQuerier,
-    wasm: WasmQuerier<QueryC>,
-    query_fn: HashMap<usize, fn(Deps<'_, QueryC>, Env, Vec<u8>) -> Result<Binary, anyhow::Error>>,
+    wasm: WasmQuerier<ExecC, QueryC>,
 
     //Box<dyn Fn(Deps<'_, C>, Env, Vec<u8>) -> Result<Binary, anyhow::Error>>, //fn(deps: Deps<C>, env: Env, msg: Vec<u8>) -> Result<Binary, anyhow::Error>,
     /// A handler to handle custom queries. This is set to a dummy handler that
@@ -65,8 +67,12 @@ pub struct MockQuerier<QueryC: CustomQuery + DeserializeOwned + 'static> {
     remote: RemoteChannel,
 }
 
-impl<QueryC: CustomQuery + DeserializeOwned + 'static> MockQuerier<QueryC> {
-    pub fn new(fork_state: ForkState<QueryC>) -> Self {
+impl<
+        ExecC: CustomMsg + DeserializeOwned + 'static,
+        QueryC: CustomQuery + DeserializeOwned + 'static,
+    > MockQuerier<ExecC, QueryC>
+{
+    pub fn new(fork_state: ForkState<ExecC, QueryC>) -> Self {
         // We create query_closures for all local_codes
 
         MockQuerier {
@@ -86,7 +92,6 @@ impl<QueryC: CustomQuery + DeserializeOwned + 'static> MockQuerier<QueryC> {
                     GasInfo::free(),
                 )
             }),
-            query_fn: fork_state.local_state.clone(),
             remote: fork_state.remote,
         }
     }
@@ -118,8 +123,10 @@ impl<QueryC: CustomQuery + DeserializeOwned + 'static> MockQuerier<QueryC> {
     }
 }
 
-impl<QueryC: CustomQuery + DeserializeOwned + 'static> cosmwasm_vm::Querier
-    for MockQuerier<QueryC>
+impl<
+        ExecC: CustomMsg + DeserializeOwned + 'static,
+        QueryC: CustomQuery + DeserializeOwned + 'static,
+    > cosmwasm_vm::Querier for MockQuerier<ExecC, QueryC>
 {
     fn query_raw(
         &self,
@@ -144,8 +151,10 @@ impl<QueryC: CustomQuery + DeserializeOwned + 'static> cosmwasm_vm::Querier
     }
 }
 
-impl<QueryC: CustomQuery + DeserializeOwned + 'static> cosmwasm_std::Querier
-    for MockQuerier<QueryC>
+impl<
+        ExecC: CustomMsg + DeserializeOwned + 'static,
+        QueryC: CustomQuery + DeserializeOwned + 'static,
+    > cosmwasm_std::Querier for MockQuerier<ExecC, QueryC>
 {
     fn raw_query(&self, bin_request: &[u8]) -> SystemResult<ContractResult<Binary>> {
         let request: QueryRequest<QueryC> = match from_json(bin_request) {
@@ -163,7 +172,11 @@ impl<QueryC: CustomQuery + DeserializeOwned + 'static> cosmwasm_std::Querier
     }
 }
 
-impl<QueryC: CustomQuery + DeserializeOwned + 'static> MockQuerier<QueryC> {
+impl<
+        ExecC: CustomMsg + DeserializeOwned + 'static,
+        QueryC: CustomQuery + DeserializeOwned + 'static,
+    > MockQuerier<ExecC, QueryC>
+{
     pub fn handle_query(&self, request: &QueryRequest<QueryC>) -> QueryResultWithGas {
         match &request {
             QueryRequest::Bank(bank_query) => self.bank.query(bank_query),

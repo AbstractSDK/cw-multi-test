@@ -2,8 +2,6 @@ use crate::prefixed_storage::decode_length;
 use crate::prefixed_storage::to_length_prefixed;
 use crate::prefixed_storage::CONTRACT_STORAGE_PREFIX;
 use crate::wasm_emulation::channel::RemoteChannel;
-use crate::wasm_emulation::input::BankStorage;
-use crate::wasm_emulation::input::WasmStorage;
 use crate::BankKeeper;
 use crate::Distribution;
 use crate::Gov;

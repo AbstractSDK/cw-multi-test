@@ -4,7 +4,7 @@ fn main() {
 use std::path::Path;
 
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{from_json, Addr, Binary, Deps, Empty, Env};
+use cosmwasm_std::{Addr, Empty};
 use counter::msg::{ExecuteMsg, GetCountResponse, QueryMsg};
 use cw_multi_test::{
     addons::{MockAddressGenerator, MockApiBech32},
@@ -15,10 +15,6 @@ use cw_orch_networks::networks::PHOENIX_1;
 use tokio::runtime::Runtime;
 
 mod counter;
-
-fn query(deps: Deps, env: Env, msg: Vec<u8>) -> AnyResult<Binary> {
-    counter::contract::query(deps, env, from_json(msg)?).map_err(Into::into)
-}
 
 pub const SENDER: &str = "terra17c6ts8grcfrgquhj3haclg44le8s7qkx6l2yx33acguxhpf000xqhnl3je";
 fn increment(app: &mut App<BankKeeper, MockApiBech32>, contract: Addr) -> AnyResult<()> {
@@ -91,7 +87,7 @@ fn test() -> AnyResult<()> {
         .build(|_, _, _| {})?;
 
     let sender = Addr::unchecked(SENDER);
-    let rust_code_id = app.store_code((Box::new(rust_contract), query));
+    let rust_code_id = app.store_code(Box::new(rust_contract));
     let wasm_code_id = app.store_wasm_code(wasm_contract);
 
     let counter_rust = app
