@@ -14,11 +14,11 @@ use cosmwasm_std::{
 use anyhow::Result as AnyResult;
 use serde::de::DeserializeOwned;
 
-use crate::{
-    prefixed_storage::{PrefixedStorage, ReadonlyPrefixedStorage},
-    wasm_emulation::{
-        query::{mock_querier::ForkState, MockQuerier},
-        storage::dual_std_storage::DualStorage,
+use crate::wasm_emulation::{
+    query::{mock_querier::ForkState, MockQuerier},
+    storage::{
+        dual_std_storage::DualStorage,
+        storage_wrappers::{ReadonlyStorageWrapper, StorageWrapper},
     },
 };
 use anyhow::{anyhow, bail};
@@ -314,7 +314,7 @@ where
         let mut storage = DualStorage::new(
             fork_state.remote,
             env.contract.address.to_string(),
-            Box::new(PrefixedStorage::new(deps.storage, &[])),
+            Box::new(StorageWrapper::new(deps.storage)),
         )?;
         let deps = DepsMut {
             storage: &mut storage,
@@ -338,7 +338,7 @@ where
         let mut storage = DualStorage::new(
             fork_state.remote,
             env.contract.address.to_string(),
-            Box::new(PrefixedStorage::new(deps.storage, &[])),
+            Box::new(StorageWrapper::new(deps.storage)),
         )?;
         let deps = DepsMut {
             storage: &mut storage,
@@ -360,7 +360,7 @@ where
         let mut storage = DualStorage::new(
             fork_state.remote,
             env.contract.address.to_string(),
-            Box::new(ReadonlyPrefixedStorage::new(deps.storage, &[])),
+            Box::new(ReadonlyStorageWrapper::new(deps.storage)),
         )?;
         let deps = Deps {
             storage: &mut storage,
@@ -383,7 +383,7 @@ where
         let mut storage = DualStorage::new(
             fork_state.remote,
             env.contract.address.to_string(),
-            Box::new(PrefixedStorage::new(deps.storage, &[])),
+            Box::new(StorageWrapper::new(deps.storage)),
         )?;
         let deps = DepsMut {
             storage: &mut storage,
@@ -409,7 +409,7 @@ where
         let mut storage = DualStorage::new(
             fork_state.remote,
             env.contract.address.to_string(),
-            Box::new(PrefixedStorage::new(deps.storage, &[])),
+            Box::new(StorageWrapper::new(deps.storage)),
         )?;
         let deps = DepsMut {
             storage: &mut storage,
@@ -434,7 +434,7 @@ where
         let mut storage = DualStorage::new(
             fork_state.remote,
             env.contract.address.to_string(),
-            Box::new(PrefixedStorage::new(deps.storage, &[])),
+            Box::new(StorageWrapper::new(deps.storage)),
         )?;
         let deps = DepsMut {
             storage: &mut storage,

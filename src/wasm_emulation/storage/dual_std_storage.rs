@@ -63,6 +63,8 @@ impl<'i> Iterator for Iter<'i> {
         // 1. We verify that there is enough elements in the distant iterator
         if self.distant_iter.position == self.distant_iter.data.len()
             && self.distant_iter.key.is_some()
+            && (self.distant_iter.position == 0
+                || !self.distant_iter.key.clone().unwrap().is_empty())
         {
             let wasm_querier = CosmWasm::new(self.distant_iter.remote.channel.clone());
             let new_keys = self
