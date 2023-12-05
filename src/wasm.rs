@@ -13,7 +13,6 @@ use crate::wasm_emulation::contract::WasmContract;
 use crate::wasm_emulation::input::QuerierStorage;
 use crate::wasm_emulation::query::mock_querier::{ForkState, LocalForkedState};
 use crate::wasm_emulation::query::AllWasmQuerier;
-use crate::wasm_emulation::storage::dual_std_storage::DualStorage;
 use cosmwasm_std::testing::mock_wasmd_attr;
 use cosmwasm_std::CustomMsg;
 use cosmwasm_std::{
@@ -401,14 +400,7 @@ where
         let namespace = self.contract_namespace(address);
         let storage = PrefixedStorage::multilevel(storage, &[NAMESPACE_WASM, &namespace]);
 
-        let dual_storage = DualStorage::new(
-            self.remote.clone().unwrap(),
-            address.to_string(),
-            Box::new(storage),
-        )
-        .unwrap();
-
-        Box::new(dual_storage)
+        Box::new(storage)
     }
 
     // fails RUNTIME if you try to write. please don't
@@ -421,15 +413,7 @@ where
         // then from wasm_storage -> the contracts subspace
         let namespace = self.contract_namespace(address);
         let storage = ReadonlyPrefixedStorage::multilevel(storage, &[NAMESPACE_WASM, &namespace]);
-
-        let dual_storage = DualStorage::new(
-            self.remote.clone().unwrap(),
-            address.to_string(),
-            Box::new(storage),
-        )
-        .unwrap();
-
-        Box::new(dual_storage)
+        Box::new(storage)
     }
 
     fn verify_attributes(attributes: &[Attribute]) -> AnyResult<()> {

@@ -14,7 +14,13 @@ use cosmwasm_std::{
 use anyhow::Result as AnyResult;
 use serde::de::DeserializeOwned;
 
-use crate::wasm_emulation::query::mock_querier::ForkState;
+use crate::{
+    prefixed_storage::{PrefixedStorage, ReadonlyPrefixedStorage},
+    wasm_emulation::{
+        query::{mock_querier::ForkState, MockQuerier},
+        storage::dual_std_storage::DualStorage,
+    },
+};
 use anyhow::{anyhow, bail};
 /// Interface to call into a [Contract].
 pub trait Contract<T, Q = Empty>
@@ -302,8 +308,20 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        _fork_state: ForkState<C, Q>,
+        fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
+        let querier = MockQuerier::new(fork_state.clone());
+        let mut storage = DualStorage::new(
+            fork_state.remote,
+            env.contract.address.to_string(),
+            Box::new(PrefixedStorage::new(deps.storage, &[])),
+        )?;
+        let deps = DepsMut {
+            storage: &mut storage,
+            api: deps.api,
+            querier: QuerierWrapper::new(&querier),
+        };
+
         let msg: T1 = from_json(msg)?;
         (self.execute_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
     }
@@ -314,8 +332,19 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        _fork_state: ForkState<C, Q>,
+        fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
+        let querier = MockQuerier::new(fork_state.clone());
+        let mut storage = DualStorage::new(
+            fork_state.remote,
+            env.contract.address.to_string(),
+            Box::new(PrefixedStorage::new(deps.storage, &[])),
+        )?;
+        let deps = DepsMut {
+            storage: &mut storage,
+            api: deps.api,
+            querier: QuerierWrapper::new(&querier),
+        };
         let msg: T2 = from_json(msg)?;
         (self.instantiate_fn)(deps, env, info, msg).map_err(|err| anyhow!(err))
     }
@@ -325,8 +354,19 @@ where
         deps: Deps<Q>,
         env: Env,
         msg: Vec<u8>,
-        _fork_state: ForkState<C, Q>,
+        fork_state: ForkState<C, Q>,
     ) -> AnyResult<Binary> {
+        let querier = MockQuerier::new(fork_state.clone());
+        let mut storage = DualStorage::new(
+            fork_state.remote,
+            env.contract.address.to_string(),
+            Box::new(ReadonlyPrefixedStorage::new(deps.storage, &[])),
+        )?;
+        let deps = Deps {
+            storage: &mut storage,
+            api: deps.api,
+            querier: QuerierWrapper::new(&querier),
+        };
         let msg: T3 = from_json(msg)?;
         (self.query_fn)(deps, env, msg).map_err(|err| anyhow!(err))
     }
@@ -337,8 +377,19 @@ where
         deps: DepsMut<Q>,
         env: Env,
         msg: Vec<u8>,
-        _fork_state: ForkState<C, Q>,
+        fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
+        let querier = MockQuerier::new(fork_state.clone());
+        let mut storage = DualStorage::new(
+            fork_state.remote,
+            env.contract.address.to_string(),
+            Box::new(PrefixedStorage::new(deps.storage, &[])),
+        )?;
+        let deps = DepsMut {
+            storage: &mut storage,
+            api: deps.api,
+            querier: QuerierWrapper::new(&querier),
+        };
         let msg = from_json(msg)?;
         match &self.sudo_fn {
             Some(sudo) => sudo(deps, env, msg).map_err(|err| anyhow!(err)),
@@ -352,8 +403,19 @@ where
         deps: DepsMut<Q>,
         env: Env,
         reply_data: Reply,
-        _fork_state: ForkState<C, Q>,
+        fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
+        let querier = MockQuerier::new(fork_state.clone());
+        let mut storage = DualStorage::new(
+            fork_state.remote,
+            env.contract.address.to_string(),
+            Box::new(PrefixedStorage::new(deps.storage, &[])),
+        )?;
+        let deps = DepsMut {
+            storage: &mut storage,
+            api: deps.api,
+            querier: QuerierWrapper::new(&querier),
+        };
         match &self.reply_fn {
             Some(reply) => reply(deps, env, reply_data).map_err(|err| anyhow!(err)),
             None => bail!("reply not implemented for contract"),
@@ -366,8 +428,19 @@ where
         deps: DepsMut<Q>,
         env: Env,
         msg: Vec<u8>,
-        _fork_state: ForkState<C, Q>,
+        fork_state: ForkState<C, Q>,
     ) -> AnyResult<Response<C>> {
+        let querier = MockQuerier::new(fork_state.clone());
+        let mut storage = DualStorage::new(
+            fork_state.remote,
+            env.contract.address.to_string(),
+            Box::new(PrefixedStorage::new(deps.storage, &[])),
+        )?;
+        let deps = DepsMut {
+            storage: &mut storage,
+            api: deps.api,
+            querier: QuerierWrapper::new(&querier),
+        };
         let msg = from_json(msg)?;
         match &self.migrate_fn {
             Some(migrate) => migrate(deps, env, msg).map_err(|err| anyhow!(err)),

@@ -43,3 +43,5 @@ pub use crate::staking::{
 pub use crate::wasm::{
     ContractData, Wasm, WasmKeeper, WasmSudo, LOCAL_RUST_CODE_OFFSET, LOCAL_WASM_CODE_OFFSET,
 };
+
+pub use prefixed_storage::{PrefixedStorage, ReadonlyPrefixedStorage};
