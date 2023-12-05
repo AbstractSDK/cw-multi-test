@@ -174,6 +174,7 @@ impl Storage for DualStorage {
                 )
             }
         };
+        // TODO, work with removed keys and don't take them
 
         // 1. We verify that there is enough elements in the distant iterator
         if iterator.distant_iter.position == iterator.distant_iter.data.len()

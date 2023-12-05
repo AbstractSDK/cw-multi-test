@@ -14,16 +14,16 @@ pub const GAS_COST_RANGE: u64 = 11;
 // We needed to add the peak function on the cosmwasm-vm code
 // This is used for making sure we have the right order between distant and local storage
 
-#[derive(Default, Debug)]
-struct Iter {
+#[derive(Default, Debug, Clone)]
+pub struct Iter {
     data: Vec<Record>,
     position: usize,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct MockStorage {
-    data: BTreeMap<Vec<u8>, Vec<u8>>,
-    iterators: HashMap<u32, Iter>,
+    pub data: BTreeMap<Vec<u8>, Vec<u8>>,
+    pub iterators: HashMap<u32, Iter>,
 }
 
 impl MockStorage {

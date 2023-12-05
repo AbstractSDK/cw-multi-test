@@ -113,7 +113,7 @@ impl<
                     querier: MockQuerier::new(self.fork_state.clone()),
                     custom_query_type: PhantomData::<QueryC>,
                 };
-                let env = mock_env();
+                let env = self.fork_state.local_state.env.clone();
 
                 let result = if let Some(local_contract) = self
                     .fork_state
@@ -141,6 +141,7 @@ impl<
                     } else if let Some(local_contract) = self
                         .fork_state
                         .local_state
+                        .contracts
                         .get(&(local_contract.code_id as usize))
                     {
                         // Local Rust Contract case

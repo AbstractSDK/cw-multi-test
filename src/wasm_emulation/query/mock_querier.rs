@@ -6,6 +6,7 @@ use crate::wasm_emulation::query::staking::StakingQuerier;
 use crate::wasm_emulation::query::wasm::WasmQuerier;
 
 use cosmwasm_std::CustomMsg;
+use cosmwasm_std::Env;
 use cosmwasm_vm::BackendResult;
 use cosmwasm_vm::GasInfo;
 
@@ -30,6 +31,12 @@ use crate::Contract;
 use super::gas::GAS_COST_QUERY_ERROR;
 
 #[derive(Clone)]
+pub struct LocalForkedState<ExecC, QueryC> {
+    pub contracts: HashMap<usize, *mut dyn Contract<ExecC, QueryC>>,
+    pub env: Env,
+}
+
+#[derive(Clone)]
 pub struct ForkState<ExecC, QueryC>
 where
     QueryC: CustomQuery + DeserializeOwned + 'static,
@@ -37,7 +44,7 @@ where
 {
     pub remote: RemoteChannel,
     /// Only query function right now, but we might pass along the whole application state to avoid stargate queries
-    pub local_state: HashMap<usize, *mut dyn Contract<ExecC, QueryC>>,
+    pub local_state: LocalForkedState<ExecC, QueryC>,
     pub querier_storage: QuerierStorage,
 }
 

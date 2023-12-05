@@ -11,8 +11,9 @@ use crate::transactions::transactional;
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::contract::WasmContract;
 use crate::wasm_emulation::input::QuerierStorage;
-use crate::wasm_emulation::query::mock_querier::ForkState;
+use crate::wasm_emulation::query::mock_querier::{ForkState, LocalForkedState};
 use crate::wasm_emulation::query::AllWasmQuerier;
+use crate::wasm_emulation::storage::dual_std_storage::DualStorage;
 use cosmwasm_std::testing::mock_wasmd_attr;
 use cosmwasm_std::CustomMsg;
 use cosmwasm_std::{
@@ -322,15 +323,22 @@ where
     QueryC: CustomQuery + DeserializeOwned + 'static,
 {
     /// Only for Clone-testing
-    fn fork_state(&self, querier_storage: QuerierStorage) -> AnyResult<ForkState<ExecC, QueryC>> {
+    fn fork_state(
+        &self,
+        querier_storage: QuerierStorage,
+        env: &Env,
+    ) -> AnyResult<ForkState<ExecC, QueryC>> {
         Ok(ForkState {
             remote: self.remote.clone().unwrap(),
             querier_storage,
-            local_state: self
-                .rust_codes
-                .iter()
-                .map(|(id, &code)| (*id, code))
-                .collect(),
+            local_state: LocalForkedState {
+                contracts: self
+                    .rust_codes
+                    .iter()
+                    .map(|(id, &code)| (*id, code))
+                    .collect(),
+                env: env.clone(),
+            },
         })
     }
 
@@ -392,7 +400,15 @@ where
         // then from wasm_storage -> the contracts subspace
         let namespace = self.contract_namespace(address);
         let storage = PrefixedStorage::multilevel(storage, &[NAMESPACE_WASM, &namespace]);
-        Box::new(storage)
+
+        let dual_storage = DualStorage::new(
+            self.remote.clone().unwrap(),
+            address.to_string(),
+            Box::new(storage),
+        )
+        .unwrap();
+
+        Box::new(dual_storage)
     }
 
     // fails RUNTIME if you try to write. please don't
@@ -405,7 +421,15 @@ where
         // then from wasm_storage -> the contracts subspace
         let namespace = self.contract_namespace(address);
         let storage = ReadonlyPrefixedStorage::multilevel(storage, &[NAMESPACE_WASM, &namespace]);
-        Box::new(storage)
+
+        let dual_storage = DualStorage::new(
+            self.remote.clone().unwrap(),
+            address.to_string(),
+            Box::new(storage),
+        )
+        .unwrap();
+
+        Box::new(dual_storage)
     }
 
     fn verify_attributes(attributes: &[Attribute]) -> AnyResult<()> {
@@ -506,12 +530,18 @@ where
             block,
             address,
             |handler, deps, env| match handler {
-                ContractBox::Borrowed(contract) => {
-                    contract.query(deps, env, msg, self.fork_state(querier_storage)?)
-                }
-                ContractBox::Owned(contract) => {
-                    contract.query(deps, env, msg, self.fork_state(querier_storage)?)
-                }
+                ContractBox::Borrowed(contract) => contract.query(
+                    deps,
+                    env.clone(),
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
+                ContractBox::Owned(contract) => contract.query(
+                    deps,
+                    env.clone(),
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
             },
         )
     }
@@ -1011,12 +1041,20 @@ where
             block,
             address,
             |contract, deps, env| match contract {
-                ContractBox::Borrowed(contract) => {
-                    contract.execute(deps, env, info, msg, self.fork_state(querier_storage)?)
-                }
-                ContractBox::Owned(contract) => {
-                    contract.execute(deps, env, info, msg, self.fork_state(querier_storage)?)
-                }
+                ContractBox::Borrowed(contract) => contract.execute(
+                    deps,
+                    env.clone(),
+                    info,
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
+                ContractBox::Owned(contract) => contract.execute(
+                    deps,
+                    env.clone(),
+                    info,
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
             },
         )?)
     }
@@ -1039,12 +1077,20 @@ where
             block,
             address,
             |contract, deps, env| match contract {
-                ContractBox::Borrowed(contract) => {
-                    contract.instantiate(deps, env, info, msg, self.fork_state(querier_storage)?)
-                }
-                ContractBox::Owned(contract) => {
-                    contract.instantiate(deps, env, info, msg, self.fork_state(querier_storage)?)
-                }
+                ContractBox::Borrowed(contract) => contract.instantiate(
+                    deps,
+                    env.clone(),
+                    info,
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
+                ContractBox::Owned(contract) => contract.instantiate(
+                    deps,
+                    env.clone(),
+                    info,
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
             },
         )?)
     }
@@ -1066,12 +1112,18 @@ where
             block,
             address,
             |contract, deps, env| match contract {
-                ContractBox::Borrowed(contract) => {
-                    contract.reply(deps, env, reply, self.fork_state(querier_storage)?)
-                }
-                ContractBox::Owned(contract) => {
-                    contract.reply(deps, env, reply, self.fork_state(querier_storage)?)
-                }
+                ContractBox::Borrowed(contract) => contract.reply(
+                    deps,
+                    env.clone(),
+                    reply,
+                    self.fork_state(querier_storage, &env)?,
+                ),
+                ContractBox::Owned(contract) => contract.reply(
+                    deps,
+                    env.clone(),
+                    reply,
+                    self.fork_state(querier_storage, &env)?,
+                ),
             },
         )?)
     }
@@ -1093,12 +1145,18 @@ where
             block,
             address,
             |contract, deps, env| match contract {
-                ContractBox::Borrowed(contract) => {
-                    contract.sudo(deps, env, msg, self.fork_state(querier_storage)?)
-                }
-                ContractBox::Owned(contract) => {
-                    contract.sudo(deps, env, msg, self.fork_state(querier_storage)?)
-                }
+                ContractBox::Borrowed(contract) => contract.sudo(
+                    deps,
+                    env.clone(),
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
+                ContractBox::Owned(contract) => contract.sudo(
+                    deps,
+                    env.clone(),
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
             },
         )?)
     }
@@ -1120,12 +1178,18 @@ where
             block,
             address,
             |contract, deps, env| match contract {
-                ContractBox::Borrowed(contract) => {
-                    contract.migrate(deps, env, msg, self.fork_state(querier_storage)?)
-                }
-                ContractBox::Owned(contract) => {
-                    contract.migrate(deps, env, msg, self.fork_state(querier_storage)?)
-                }
+                ContractBox::Borrowed(contract) => contract.migrate(
+                    deps,
+                    env.clone(),
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
+                ContractBox::Owned(contract) => contract.migrate(
+                    deps,
+                    env.clone(),
+                    msg,
+                    self.fork_state(querier_storage, &env)?,
+                ),
             },
         )?)
     }
