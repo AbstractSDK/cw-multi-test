@@ -1,16 +1,12 @@
-use crate::prefixed_storage::PrefixedStorage;
 use crate::wasm_emulation::channel::RemoteChannel;
-use crate::wasm_emulation::storage::mock_storage::{GAS_COST_LAST_ITERATION, GAS_COST_RANGE};
 
-use super::mock_storage::MockStorage;
 use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmwasm::wasm::v1::Model;
 use cosmwasm_std::Record;
 use cosmwasm_std::{Order, Storage};
 use cw_orch_daemon::queriers::DaemonQuerier;
 use num_bigint::{BigInt, Sign};
-use std::collections::HashMap;
-use std::iter;
+use std::iter::{self, Peekable};
 
 use cw_orch_daemon::queriers::CosmWasm;
 
@@ -43,8 +39,9 @@ use std::collections::HashSet;
 use anyhow::Result as AnyResult;
 const DISTANT_LIMIT: u64 = 5u64;
 
-#[derive(Default, Debug)]
 struct DistantIter {
+    remote: RemoteChannel,
+    contract_addr: String,
     data: Vec<Model>,
     position: usize,
     key: Option<Vec<u8>>, // if set to None, there is no more keys to investigate in the distant container
@@ -54,10 +51,82 @@ struct DistantIter {
 }
 
 /// Iterator to get multiple keys
-#[derive(Default, Debug)]
-struct Iter {
+struct Iter<'a> {
     distant_iter: DistantIter,
-    local_iter: u32,
+    local_iter: Peekable<Box<dyn Iterator<Item = Record> + 'a>>,
+}
+
+impl<'i> Iterator for Iter<'i> {
+    type Item = Record;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // 1. We verify that there is enough elements in the distant iterator
+        if self.distant_iter.position == self.distant_iter.data.len()
+            && self.distant_iter.key.is_some()
+        {
+            let wasm_querier = CosmWasm::new(self.distant_iter.remote.channel.clone());
+            let new_keys = self
+                .distant_iter
+                .remote
+                .rt
+                .block_on(wasm_querier.all_contract_state(
+                    self.distant_iter.contract_addr.clone(),
+                    Some(PageRequest {
+                        key: self.distant_iter.key.clone().unwrap(),
+                        offset: 0,
+                        limit: DISTANT_LIMIT,
+                        count_total: false,
+                        reverse: self.distant_iter.reverse,
+                    }),
+                ))
+                .unwrap_or_default();
+
+            // We make sure the data queried correspond to all the keys we need
+            self.distant_iter
+                .data
+                .extend(new_keys.models.into_iter().filter(|m| {
+                    let lower_than_end = if let Some(end) = self.distant_iter.end.clone() {
+                        !gte(m.key.clone(), end)
+                    } else {
+                        true
+                    };
+
+                    let higher_than_start = if let Some(start) = self.distant_iter.start.clone() {
+                        gte(m.key.clone(), start)
+                    } else {
+                        true
+                    };
+
+                    lower_than_end && higher_than_start
+                }));
+            self.distant_iter.key = new_keys.pagination.map(|p| p.next_key);
+        }
+
+        // 2. We find the first key in order between distant and local storage
+        let next_local = self.local_iter.peek();
+        let next_distant = self.distant_iter.data.get(self.distant_iter.position);
+
+        if let Some(local) = next_local {
+            if let Some(distant) = next_distant {
+                // We compare the two keys with the order and return the higher key
+                let key_local = BigInt::from_bytes_be(Sign::Plus, &local.0);
+                let key_distant = BigInt::from_bytes_be(Sign::Plus, &distant.key);
+                if (key_local < key_distant) == self.distant_iter.reverse {
+                    self.distant_iter.position += 1;
+                    Some((distant.key.clone(), distant.value.clone()))
+                } else {
+                    self.local_iter.next()
+                }
+            } else {
+                self.local_iter.next()
+            }
+        } else if let Some(distant) = next_distant {
+            self.distant_iter.position += 1;
+            Some((distant.key.clone(), distant.value.clone()))
+        } else {
+            None
+        }
+    }
 }
 
 pub struct DualStorage<'a> {
@@ -65,7 +134,6 @@ pub struct DualStorage<'a> {
     pub removed_keys: HashSet<Vec<u8>>,
     pub remote: RemoteChannel,
     pub contract_addr: String,
-    iterators: HashMap<u32, Iter>,
 }
 
 impl<'a> DualStorage<'a> {
@@ -79,7 +147,6 @@ impl<'a> DualStorage<'a> {
             remote,
             removed_keys: HashSet::default(),
             contract_addr,
-            iterators: HashMap::new(),
         })
     }
 }
@@ -121,6 +188,27 @@ impl<'a> Storage for DualStorage<'a> {
         end: Option<&[u8]>,
         order: Order,
     ) -> Box<dyn Iterator<Item = Record> + 'b> {
-        todo!()
+        let order_i32: i32 = order.try_into().unwrap();
+        let descending_order: i32 = Order::Descending.try_into().unwrap();
+
+        let querier_start = if order_i32 == descending_order {
+            end.map(|s| s.to_vec()).unwrap_or(vec![])
+        } else {
+            start.map(|s| s.to_vec()).unwrap_or(vec![])
+        };
+
+        return Box::new(Iter {
+            distant_iter: DistantIter {
+                remote: self.remote.clone(),
+                contract_addr: self.contract_addr.clone(),
+                data: vec![],
+                position: 0,
+                key: Some(querier_start),
+                end: end.map(|e| e.to_vec()),
+                start: start.map(|e| e.to_vec()),
+                reverse: order_i32 == descending_order,
+            },
+            local_iter: self.local_storage.range(start, end, order).peekable(),
+        });
     }
 }
