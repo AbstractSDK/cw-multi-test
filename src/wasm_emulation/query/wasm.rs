@@ -13,11 +13,11 @@ use crate::wasm_emulation::contract::WasmContract;
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
 use cosmwasm_vm::GasInfo;
 
-use cosmwasm_std::ContractResult;
 use cosmwasm_std::{
     to_json_binary, Addr, ContractInfoResponse, CustomMsg, CustomQuery, OwnedDeps, Storage,
     SystemError, SystemResult,
 };
+use cosmwasm_std::{ContractInfo, ContractResult};
 
 use cosmwasm_std::WasmQuery;
 use serde::de::DeserializeOwned;
@@ -113,7 +113,10 @@ impl<
                     querier: MockQuerier::new(self.fork_state.clone()),
                     custom_query_type: PhantomData::<QueryC>,
                 };
-                let env = self.fork_state.local_state.env.clone();
+                let mut env = self.fork_state.local_state.env.clone();
+                env.contract = ContractInfo {
+                    address: Addr::unchecked(contract_addr),
+                };
 
                 let result = if let Some(local_contract) = self
                     .fork_state
