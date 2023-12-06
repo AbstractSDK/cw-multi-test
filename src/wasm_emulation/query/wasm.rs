@@ -81,16 +81,24 @@ impl<
                     .iter()
                     .find(|e| e.0 == total_key)
                 {
-                    value.1.clone()
+                    return (
+                        SystemResult::Ok(ContractResult::Ok(value.1.clone().into())),
+                        GasInfo::with_externally_used(GAS_COST_RAW_COSMWASM_QUERY),
+                    );
                 } else {
-                    WasmRemoteQuerier::raw_query(remote, contract_addr.clone(), key.clone())
-                        .unwrap()
+                    return (
+                        SystemResult::Ok(
+                            WasmRemoteQuerier::raw_query(
+                                remote,
+                                contract_addr.clone(),
+                                key.clone(),
+                            )
+                            .map(Into::into)
+                            .into(),
+                        ),
+                        GasInfo::with_externally_used(GAS_COST_RAW_COSMWASM_QUERY),
+                    );
                 };
-
-                (
-                    SystemResult::Ok(ContractResult::Ok(value.into())),
-                    GasInfo::with_externally_used(GAS_COST_RAW_COSMWASM_QUERY),
-                )
             }
             WasmQuery::Smart { contract_addr, msg } => {
                 let addr = Addr::unchecked(contract_addr);
