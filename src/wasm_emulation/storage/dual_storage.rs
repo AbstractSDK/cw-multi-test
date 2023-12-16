@@ -168,7 +168,6 @@ impl Storage for DualStorage {
         let iterator = match self.iterators.get_mut(&iterator_id) {
             Some(i) => i,
             None => {
-                println!("End next premature");
                 return (
                     Err(BackendError::iterator_does_not_exist(iterator_id)),
                     GasInfo::free(),

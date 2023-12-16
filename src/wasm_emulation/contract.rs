@@ -205,7 +205,7 @@ impl WasmContract {
 
     pub fn after_execution_callback<ExecC>(&self, output: &WasmRunnerOutput<ExecC>) {
         // We log the gas used
-        print!("Gas used {:?} for ", output.gas_used);
+        log::debug!("Gas used {:?} for ", output.gas_used);
         match output.wasm {
             WasmOutput::Execute(_) => print!("execution"),
             WasmOutput::Query(_) => print!("query"),
@@ -214,7 +214,7 @@ impl WasmContract {
             WasmOutput::Sudo(_) => print!("sudo"),
             WasmOutput::Reply(_) => print!("reply"),
         }
-        println!(" on contract {:?}. ", self);
+        log::debug!(" on contract {:?}. ", self);
     }
 }
 

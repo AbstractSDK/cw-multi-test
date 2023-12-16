@@ -102,7 +102,6 @@ impl<
             }
             WasmQuery::Smart { contract_addr, msg } => {
                 let addr = Addr::unchecked(contract_addr);
-                println!("Trying to query {:?}", contract_addr);
 
                 let mut storage = MockStorage::default();
                 // Set the storage
