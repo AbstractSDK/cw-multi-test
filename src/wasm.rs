@@ -600,8 +600,6 @@ where
         sender: Addr,
         wasm_msg: WasmMsg,
     ) -> AnyResult<AppResponse> {
-        let querier_storage = router.get_querier_storage(storage)?;
-
         match wasm_msg {
             WasmMsg::Execute {
                 contract_addr,
@@ -622,6 +620,7 @@ where
 
                 // then call the contract
                 let info = MessageInfo { sender, funds };
+                let querier_storage = router.get_querier_storage(storage)?;
 
                 let res = self.call_execute(
                     api,
@@ -691,6 +690,7 @@ where
                 self.save_contract(storage, &contract_addr, &data)?;
 
                 // then call migrate
+                let querier_storage = router.get_querier_storage(storage)?;
                 let res = self.call_migrate(
                     contract_addr.clone(),
                     api,
@@ -1155,6 +1155,7 @@ where
         msg: Vec<u8>,
         querier_storage: QuerierStorage,
     ) -> AnyResult<Response<ExecC>> {
+        let querier_storage = router.get_querier_storage(storage)?;
         Self::verify_response(self.with_storage(
             api,
             storage,
