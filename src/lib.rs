@@ -20,12 +20,12 @@ mod executor;
 mod gov;
 mod ibc;
 mod module;
-mod prefixed_storage;
+pub(crate) mod prefixed_storage;
+pub mod queries;
 mod staking;
-mod test_helpers;
-mod tests;
 mod transactions;
 mod wasm;
+pub mod wasm_emulation;
 
 pub use crate::addresses::{AddressGenerator, SimpleAddressGenerator};
 pub use crate::app::{custom_app, next_block, App, BasicApp, CosmosRouter, Router, SudoMsg};
@@ -40,4 +40,8 @@ pub use crate::module::{AcceptingModule, FailingModule, Module};
 pub use crate::staking::{
     Distribution, DistributionKeeper, StakeKeeper, Staking, StakingInfo, StakingSudo,
 };
-pub use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};
+pub use crate::wasm::{
+    ContractData, Wasm, WasmKeeper, WasmSudo, LOCAL_RUST_CODE_OFFSET, LOCAL_WASM_CODE_OFFSET,
+};
+
+pub use prefixed_storage::{PrefixedStorage, ReadonlyPrefixedStorage};

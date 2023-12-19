@@ -26,3 +26,6 @@ tarpaulin-report.*
 
 packages/*/schema
 contracts/*/schema
+
+.env
+state.json

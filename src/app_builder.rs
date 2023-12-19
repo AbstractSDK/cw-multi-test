@@ -1,12 +1,13 @@
 //! Implementation of the builder for [App].
 
+use crate::wasm_emulation::channel::RemoteChannel;
 use crate::{
     App, Bank, BankKeeper, Distribution, DistributionKeeper, FailingModule, Gov, GovFailingModule,
     Ibc, IbcFailingModule, Module, Router, StakeKeeper, Staking, Wasm, WasmKeeper,
 };
+use anyhow::Result as AnyResult;
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
-use cosmwasm_std::{Api, BlockInfo, CustomQuery, Empty, Storage};
-use schemars::JsonSchema;
+use cosmwasm_std::{Api, BlockInfo, CustomMsg, CustomQuery, Empty, Storage};
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
 
@@ -50,6 +51,7 @@ pub struct AppBuilder<Bank, Api, Storage, Custom, Wasm, Staking, Distr, Ibc, Gov
     distribution: Distr,
     ibc: Ibc,
     gov: Gov,
+    remote: Option<RemoteChannel>,
 }
 
 impl Default
@@ -96,6 +98,7 @@ impl
             distribution: DistributionKeeper::new(),
             ibc: IbcFailingModule::new(),
             gov: GovFailingModule::new(),
+            remote: None,
         }
     }
 }
@@ -113,7 +116,7 @@ impl<ExecC, QueryC>
         GovFailingModule,
     >
 where
-    ExecC: Debug + Clone + PartialEq + JsonSchema + DeserializeOwned + 'static,
+    ExecC: CustomMsg + DeserializeOwned + 'static,
     QueryC: Debug + CustomQuery + DeserializeOwned + 'static,
 {
     /// Creates builder with default components designed to work with custom exec and query
@@ -130,6 +133,7 @@ where
             distribution: DistributionKeeper::new(),
             ibc: IbcFailingModule::new(),
             gov: GovFailingModule::new(),
+            remote: None,
         }
     }
 }
@@ -139,6 +143,7 @@ impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
 where
     CustomT: Module,
     WasmT: Wasm<CustomT::ExecT, CustomT::QueryT>,
+    CustomT::QueryT: CustomQuery,
 {
     /// Overwrites the default wasm executor.
     ///
@@ -159,6 +164,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
             ..
         } = self;
 
@@ -173,6 +179,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -191,6 +198,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
             ..
         } = self;
 
@@ -205,6 +213,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -223,6 +232,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
             ..
         } = self;
 
@@ -237,6 +247,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -255,6 +266,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
             ..
         } = self;
 
@@ -269,6 +281,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -291,6 +304,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
             ..
         } = self;
 
@@ -305,6 +319,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -323,6 +338,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
             ..
         } = self;
 
@@ -337,6 +353,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -356,6 +373,7 @@ where
             bank,
             ibc,
             gov,
+            remote,
             ..
         } = self;
 
@@ -370,6 +388,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -394,6 +413,7 @@ where
             bank,
             distribution,
             gov,
+            remote,
             ..
         } = self;
 
@@ -408,6 +428,7 @@ where
             distribution,
             ibc,
             gov,
+            remote,
         }
     }
 
@@ -426,6 +447,7 @@ where
             bank,
             distribution,
             ibc,
+            remote,
             ..
         } = self;
 
@@ -439,6 +461,41 @@ where
             staking,
             distribution,
             ibc,
+            gov,
+            remote,
+        }
+    }
+
+    /// Sets the chain of the app
+    pub fn with_remote(
+        self,
+        remote: RemoteChannel,
+    ) -> AppBuilder<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
+        let AppBuilder {
+            wasm,
+            api,
+            storage,
+            custom,
+            block,
+            staking,
+            bank,
+            distribution,
+            ibc,
+            gov,
+            ..
+        } = self;
+
+        AppBuilder {
+            api,
+            block,
+            storage,
+            bank,
+            wasm,
+            custom,
+            staking,
+            distribution,
+            ibc,
+            remote: Some(remote),
             gov,
         }
     }
@@ -455,7 +512,7 @@ where
     pub fn build<F>(
         self,
         init_fn: F,
-    ) -> App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>
+    ) -> AnyResult<App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>>
     where
         BankT: Bank,
         ApiT: Api,
@@ -487,8 +544,11 @@ where
             api: self.api,
             block: self.block,
             storage: self.storage,
+            remote: self.remote.ok_or(anyhow::anyhow!(
+                "Remote has to be defined to use clone-testing"
+            ))?,
         };
         app.init_modules(init_fn);
-        app
+        Ok(app)
     }
 }

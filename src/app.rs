@@ -1,5 +1,10 @@
+use crate::wasm_emulation::api::RealApi;
+use crate::wasm_emulation::channel::RemoteChannel;
+use crate::wasm_emulation::input::QuerierStorage;
+use cosmwasm_std::CustomMsg;
+use cw_storage_plus::Item;
+
 use crate::bank::{Bank, BankKeeper, BankSudo};
-use crate::contracts::Contract;
 use crate::error::{bail, AnyResult};
 use crate::executor::{AppResponse, Executor};
 use crate::gov::Gov;
@@ -8,7 +13,8 @@ use crate::module::{FailingModule, Module};
 use crate::staking::{Distribution, DistributionKeeper, StakeKeeper, Staking, StakingSudo};
 use crate::transactions::transactional;
 use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};
-use crate::{AppBuilder, GovFailingModule, IbcFailingModule};
+use crate::wasm_emulation::contract::WasmContract;
+use crate::{AppBuilder, Contract, GovFailingModule, IbcFailingModule};
 use cosmwasm_std::testing::{MockApi, MockStorage};
 use cosmwasm_std::{
     from_json, to_json_binary, Addr, Api, Binary, BlockInfo, ContractResult, CosmosMsg,
@@ -19,6 +25,8 @@ use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 use std::marker::PhantomData;
+
+const ADDRESSES: Item<Vec<Addr>> = Item::new("addresses");
 
 pub fn next_block(block: &mut BlockInfo) {
     block.time = block.time.plus_seconds(5);
@@ -57,24 +65,12 @@ pub struct App<
     pub(crate) api: Api,
     pub(crate) storage: Storage,
     pub(crate) block: BlockInfo,
-}
-
-pub fn no_init<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>(
-    _: &mut Router<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>,
-    _: &dyn Api,
-    _: &mut dyn Storage,
-) {
-}
-
-impl Default for BasicApp {
-    fn default() -> Self {
-        Self::new(no_init)
-    }
+    pub(crate) remote: RemoteChannel,
 }
 
 impl BasicApp {
     /// Creates new default `App` implementation working with Empty custom messages.
-    pub fn new<F>(init_fn: F) -> Self
+    pub fn new<F>(remote: RemoteChannel, init_fn: F) -> AnyResult<Self>
     where
         F: FnOnce(
             &mut Router<
@@ -90,15 +86,18 @@ impl BasicApp {
             &mut dyn Storage,
         ),
     {
-        AppBuilder::new().build(init_fn)
+        AppBuilder::new().with_remote(remote).build(init_fn)
     }
 }
 
 /// Creates new default `App` implementation working with customized exec and query messages.
 /// Outside of `App` implementation to make type elision better.
-pub fn custom_app<ExecC, QueryC, F>(init_fn: F) -> BasicApp<ExecC, QueryC>
+pub fn custom_app<ExecC, QueryC, F>(
+    remote: RemoteChannel,
+    init_fn: F,
+) -> AnyResult<BasicApp<ExecC, QueryC>>
 where
-    ExecC: Debug + Clone + PartialEq + JsonSchema + DeserializeOwned + 'static,
+    ExecC: CustomMsg + DeserializeOwned + 'static,
     QueryC: Debug + CustomQuery + DeserializeOwned + 'static,
     F: FnOnce(
         &mut Router<
@@ -114,7 +113,7 @@ where
         &mut dyn Storage,
     ),
 {
-    AppBuilder::new_custom().build(init_fn)
+    AppBuilder::new_custom().with_remote(remote).build(init_fn)
 }
 
 impl<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> Querier
@@ -173,6 +172,7 @@ where
     DistrT: Distribution,
     IbcT: Ibc,
     GovT: Gov,
+    CustomT::QueryT: CustomQuery,
 {
     /// Returns a shared reference to application's router.
     pub fn router(&self) -> &Router<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> {
@@ -231,9 +231,20 @@ where
     DistrT: Distribution,
     IbcT: Ibc,
     GovT: Gov,
-    CustomT::ExecT: Clone + Debug + PartialEq + JsonSchema + DeserializeOwned + 'static,
+    CustomT::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT::QueryT: CustomQuery + DeserializeOwned + 'static,
 {
+    /// Registers contract code (like uploading wasm bytecode on a chain),
+    /// so it can later be used to instantiate a contract.
+    /// Only for wasm codes
+    pub fn store_wasm_code(&mut self, code: WasmContract) -> u64 {
+        self.init_modules(|router, _, _| {
+            router
+                .wasm
+                .store_wasm_code(Addr::unchecked("code-creator"), code)
+        })
+    }
+
     /// Registers contract code (like uploading wasm bytecode on a chain),
     /// so it can later be used to instantiate a contract.
     pub fn store_code(&mut self, code: Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>) -> u64 {
@@ -246,65 +257,18 @@ where
 
     /// Registers contract code (like [store_code](Self::store_code)),
     /// but takes the address of the code creator as an additional argument.
+    pub fn store_wasm_code_with_creator(&mut self, creator: Addr, code: WasmContract) -> u64 {
+        self.init_modules(|router, _, _| router.wasm.store_wasm_code(creator, code))
+    }
+
+    /// Registers contract code (like [store_code](Self::store_code)),
+    /// but takes the address of the code creator as an additional argument.
     pub fn store_code_with_creator(
         &mut self,
         creator: Addr,
         code: Box<dyn Contract<CustomT::ExecT, CustomT::QueryT>>,
     ) -> u64 {
         self.init_modules(|router, _, _| router.wasm.store_code(creator, code))
-    }
-
-    /// Duplicates the contract code identified by `code_id` and returns
-    /// the identifier of the newly created copy of the contract code.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use cosmwasm_std::Addr;
-    /// use cw_multi_test::App;
-    ///
-    /// // contract implementation
-    /// mod echo {
-    ///   // contract entry points not shown here
-    /// #  use std::todo;
-    /// #  use cosmwasm_std::{Binary, Deps, DepsMut, Empty, Env, MessageInfo, Response, StdError, SubMsg, WasmMsg};
-    /// #  use serde::{Deserialize, Serialize};
-    /// #  use cw_multi_test::{Contract, ContractWrapper};
-    /// #
-    /// #  fn instantiate(_: DepsMut, _: Env, _: MessageInfo, _: Empty) -> Result<Response, StdError> {
-    /// #    todo!()
-    /// #  }
-    /// #
-    /// #  fn execute(_: DepsMut, _: Env, _info: MessageInfo, msg: WasmMsg) -> Result<Response, StdError> {
-    /// #    todo!()
-    /// #  }
-    /// #
-    /// #  fn query(_deps: Deps, _env: Env, _msg: Empty) -> Result<Binary, StdError> {
-    /// #    todo!()
-    /// #  }
-    /// #
-    ///   pub fn contract() -> Box<dyn Contract<Empty>> {
-    ///     // should return the contract
-    /// #   Box::new(ContractWrapper::new(execute, instantiate, query))
-    ///   }
-    /// }
-    ///
-    /// let mut app = App::default();
-    ///
-    /// // store a new contract, save the code id
-    /// let code_id = app.store_code(echo::contract());
-    ///
-    /// // duplicate the existing contract, duplicated contract has different code id
-    /// assert_ne!(code_id, app.duplicate_code(code_id).unwrap());
-    ///
-    /// // zero is an invalid identifier for contract code, returns an error
-    /// assert_eq!("code id: invalid", app.duplicate_code(0).unwrap_err().to_string());
-    ///
-    /// // there is no contract code with identifier 100 stored yet, returns an error
-    /// assert_eq!("code id 100: no such code", app.duplicate_code(100).unwrap_err().to_string());
-    /// ```
-    pub fn duplicate_code(&mut self, code_id: u64) -> AnyResult<u64> {
-        self.init_modules(|router, _, _| router.wasm.duplicate_code(code_id))
     }
 
     /// Returns `ContractData` for the contract with specified address.
@@ -355,10 +319,33 @@ where
         self.block.clone()
     }
 
+    /// Returns a new account address
+    pub fn next_address(&mut self) -> Addr {
+        let Self {
+            storage, remote, ..
+        } = self;
+
+        let mut addresses = ADDRESSES.may_load(storage).unwrap().unwrap_or_default();
+
+        let new_address =
+            RealApi::new(&remote.chain.bech32_prefix.clone()).next_address(addresses.len());
+        addresses.push(new_address.clone());
+        ADDRESSES.save(storage, &addresses).unwrap();
+
+        new_address
+    }
+
     /// Simple helper so we get access to all the QuerierWrapper helpers,
     /// eg. wrap().query_wasm_smart, query_all_balances, ...
     pub fn wrap(&self) -> QuerierWrapper<CustomT::QueryT> {
         QuerierWrapper::new(self)
+    }
+
+    pub fn get_querier_storage(&self) -> AnyResult<QuerierStorage> {
+        // We get the wasm storage for all wasm contract to make sure we dispatch everything (with the mock Querier)
+        let wasm = self.router.wasm.query_all(&self.storage)?;
+        let bank = self.router.bank.query_all(&self.storage)?;
+        Ok(QuerierStorage { wasm, bank })
     }
 
     /// Runs multiple CosmosMsg in one atomic operation.
@@ -378,6 +365,7 @@ where
             router,
             api,
             storage,
+            ..
         } = self;
 
         transactional(&mut *storage, |write_cache, _| {
@@ -402,6 +390,7 @@ where
             router,
             api,
             storage,
+            ..
         } = self;
 
         transactional(&mut *storage, |write_cache, _| {
@@ -423,6 +412,7 @@ where
             router,
             api,
             storage,
+            ..
         } = self;
 
         transactional(&mut *storage, |write_cache, _| {
@@ -528,6 +518,8 @@ pub trait CosmosRouter {
         block: &BlockInfo,
         msg: SudoMsg,
     ) -> AnyResult<AppResponse>;
+
+    fn get_querier_storage(&self, storage: &dyn Storage) -> AnyResult<QuerierStorage>;
 }
 
 impl<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT> CosmosRouter
@@ -580,7 +572,7 @@ where
     ) -> AnyResult<Binary> {
         let querier = self.querier(api, storage, block);
         match request {
-            QueryRequest::Wasm(req) => self.wasm.query(api, storage, &querier, block, req),
+            QueryRequest::Wasm(req) => self.wasm.query(api, storage, self, &querier, block, req),
             QueryRequest::Bank(req) => self.bank.query(api, storage, &querier, block, req),
             QueryRequest::Custom(req) => self.custom.query(api, storage, &querier, block, req),
             QueryRequest::Staking(req) => self.staking.query(api, storage, &querier, block, req),
@@ -605,6 +597,13 @@ where
             SudoMsg::Staking(msg) => self.staking.sudo(api, storage, self, block, msg),
             SudoMsg::Custom(_) => unimplemented!(),
         }
+    }
+
+    fn get_querier_storage(&self, storage: &dyn Storage) -> AnyResult<QuerierStorage> {
+        // We get the wasm storage for all wasm contract to make sure we dispatch everything (with the mock Querier)
+        let wasm = self.wasm.query_all(storage)?;
+        let bank = self.bank.query_all(storage)?;
+        Ok(QuerierStorage { wasm, bank })
     }
 }
 
@@ -661,6 +660,10 @@ where
         _msg: SudoMsg,
     ) -> AnyResult<AppResponse> {
         panic!("Cannot sudo MockRouters");
+    }
+
+    fn get_querier_storage(&self, _storage: &dyn Storage) -> AnyResult<QuerierStorage> {
+        Ok(QuerierStorage::default())
     }
 }
 

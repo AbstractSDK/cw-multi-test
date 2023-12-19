@@ -30,6 +30,9 @@ pub enum Error {
 
     #[error("Contract with this address already exists: {0}")]
     DuplicatedContractAddress(String),
+
+    #[error("Unregistered contract address, not present locally or on-chain")]
+    UnregisteredContractAddress(String),
 }
 
 impl Error {
