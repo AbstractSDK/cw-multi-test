@@ -325,7 +325,7 @@ where
             storage, remote, ..
         } = self;
 
-        let mut addresses = ADDRESSES.may_load(storage).unwrap().unwrap_or(vec![]);
+        let mut addresses = ADDRESSES.may_load(storage).unwrap().unwrap_or_default();
 
         let new_address =
             RealApi::new(&remote.chain.bech32_prefix.clone()).next_address(addresses.len());

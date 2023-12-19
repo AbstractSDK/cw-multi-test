@@ -1155,7 +1155,6 @@ where
         msg: Vec<u8>,
         querier_storage: QuerierStorage,
     ) -> AnyResult<Response<ExecC>> {
-        let querier_storage = router.get_querier_storage(storage)?;
         Self::verify_response(self.with_storage(
             api,
             storage,

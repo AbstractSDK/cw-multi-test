@@ -11,7 +11,7 @@ use crate::wasm_emulation::query::MockQuerier;
 use crate::Contract;
 
 use crate::wasm_emulation::contract::WasmContract;
-use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
+use cosmwasm_std::testing::MockStorage;
 use cosmwasm_vm::GasInfo;
 
 use cosmwasm_std::{
@@ -74,7 +74,7 @@ impl<
                     get_full_contract_storage_namespace(&Addr::unchecked(contract_addr)).to_vec();
                 total_key.extend_from_slice(key);
 
-                let value: Vec<u8> = if let Some(value) = self
+                if let Some(value) = self
                     .fork_state
                     .querier_storage
                     .wasm
@@ -82,12 +82,12 @@ impl<
                     .iter()
                     .find(|e| e.0 == total_key)
                 {
-                    return (
+                    (
                         SystemResult::Ok(ContractResult::Ok(value.1.clone().into())),
                         GasInfo::with_externally_used(GAS_COST_RAW_COSMWASM_QUERY),
-                    );
+                    )
                 } else {
-                    return (
+                    (
                         SystemResult::Ok(
                             WasmRemoteQuerier::raw_query(
                                 remote,
@@ -98,8 +98,8 @@ impl<
                             .into(),
                         ),
                         GasInfo::with_externally_used(GAS_COST_RAW_COSMWASM_QUERY),
-                    );
-                };
+                    )
+                }
             }
             WasmQuery::Smart { contract_addr, msg } => {
                 let addr = Addr::unchecked(contract_addr);

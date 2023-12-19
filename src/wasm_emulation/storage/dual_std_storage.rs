@@ -194,9 +194,9 @@ impl<'a> Storage for DualStorage<'a> {
         let descending_order: i32 = Order::Descending.try_into().unwrap();
 
         let querier_start = if order_i32 == descending_order {
-            end.map(|s| s.to_vec()).unwrap_or(vec![])
+            end.map(|s| s.to_vec()).unwrap_or_default()
         } else {
-            start.map(|s| s.to_vec()).unwrap_or(vec![])
+            start.map(|s| s.to_vec()).unwrap_or_default()
         };
 
         return Box::new(Iter {
