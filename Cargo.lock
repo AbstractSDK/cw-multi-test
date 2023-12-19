@@ -858,7 +858,7 @@ dependencies = [
 
 [[package]]
 name = "cw-multi-test"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "anyhow",
  "bech32",
