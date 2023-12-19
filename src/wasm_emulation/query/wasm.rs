@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::addons::MockApiBech32;
 use crate::prefixed_storage::get_full_contract_storage_namespace;
 use crate::queries::wasm::WasmRemoteQuerier;
 use crate::wasm_emulation::query::gas::{
@@ -116,7 +117,7 @@ impl<
 
                 let deps = OwnedDeps {
                     storage,
-                    api: MockApi::default(),
+                    api: MockApiBech32::new(&self.fork_state.remote.chain.bech32_prefix),
                     querier: MockQuerier::new(self.fork_state.clone()),
                     custom_query_type: PhantomData::<QueryC>,
                 };
