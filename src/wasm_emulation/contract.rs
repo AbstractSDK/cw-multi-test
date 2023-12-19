@@ -1,28 +1,17 @@
 use crate::wasm_emulation::api::RealApi;
-use crate::wasm_emulation::input::get_querier_storage;
 use crate::wasm_emulation::input::ReplyArgs;
 use crate::wasm_emulation::output::StorageChanges;
 use crate::wasm_emulation::query::MockQuerier;
 use crate::wasm_emulation::storage::DualStorage;
 use cosmwasm_std::CustomMsg;
 use cosmwasm_std::StdError;
-use cosmwasm_vm::call_execute;
-use cosmwasm_vm::call_instantiate;
-use cosmwasm_vm::call_migrate;
-use cosmwasm_vm::call_query;
-use cosmwasm_vm::call_reply;
-use cosmwasm_vm::call_sudo;
-use cosmwasm_vm::Backend;
-use cosmwasm_vm::BackendApi;
-use cosmwasm_vm::Checksum;
-use cosmwasm_vm::Instance;
-use cosmwasm_vm::InstanceOptions;
-use cosmwasm_vm::Querier;
-use cosmwasm_vm::Size;
+use cosmwasm_vm::{
+    call_execute, call_instantiate, call_migrate, call_query, call_reply, call_sudo, Backend,
+    BackendApi, Checksum, Instance, InstanceOptions, Querier, Size,
+};
 use cw_orch_daemon::queriers::CosmWasm;
 use cw_orch_daemon::queriers::DaemonQuerier;
 
-use cosmwasm_std::Empty;
 use cosmwasm_std::Order;
 use cosmwasm_std::Storage;
 
@@ -33,9 +22,8 @@ use serde::Serialize;
 use crate::wasm_emulation::input::InstanceArguments;
 use crate::wasm_emulation::output::WasmRunnerOutput;
 
-use std::collections::HashSet;
-
 use cosmwasm_vm::internals::check_wasm;
+use std::collections::HashSet;
 
 use crate::Contract;
 
@@ -43,7 +31,6 @@ use cosmwasm_std::{Binary, CustomQuery, Deps, DepsMut, Env, MessageInfo, Reply, 
 
 use anyhow::Result as AnyResult;
 
-use super::channel::RemoteChannel;
 use super::input::ExecuteArgs;
 use super::input::InstantiateArgs;
 use super::input::MigrateArgs;
@@ -51,6 +38,7 @@ use super::input::QueryArgs;
 use super::input::SudoArgs;
 use super::input::WasmFunction;
 use super::output::WasmOutput;
+use super::query::mock_querier::ForkState;
 
 fn apply_storage_changes<ExecC>(storage: &mut dyn Storage, output: &WasmRunnerOutput<ExecC>) {
     // We change all the values with the output
@@ -83,18 +71,18 @@ pub struct DistantCodeId {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct LocalContract {
+pub struct LocalWasmContract {
     pub code: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum WasmContract {
-    Local(LocalContract),
+    Local(LocalWasmContract),
     DistantContract(DistantContract),
     DistantCodeId(DistantCodeId),
 }
 
-impl std::fmt::Debug for LocalContract {
+impl std::fmt::Debug for LocalWasmContract {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
             f,
@@ -115,7 +103,7 @@ impl WasmContract {
             ]),
         )
         .unwrap();
-        Self::Local(LocalContract { code })
+        Self::Local(LocalWasmContract { code })
     }
 
     pub fn new_distant_contract(contract_addr: String) -> Self {
@@ -126,49 +114,63 @@ impl WasmContract {
         Self::DistantCodeId(DistantCodeId { code_id })
     }
 
-    pub fn get_code(&self, remote: RemoteChannel) -> AnyResult<Vec<u8>> {
+    pub fn get_code<ExecC: CustomMsg + 'static, QueryC: CustomQuery + DeserializeOwned>(
+        &self,
+        fork_state: ForkState<ExecC, QueryC>,
+    ) -> AnyResult<Vec<u8>> {
         match self {
-            WasmContract::Local(LocalContract { code, .. }) => Ok(code.clone()),
+            WasmContract::Local(LocalWasmContract { code, .. }) => Ok(code.clone()),
             WasmContract::DistantContract(DistantContract { contract_addr }) => {
-                let wasm_querier = CosmWasm::new(remote.channel);
+                let wasm_querier = CosmWasm::new(fork_state.remote.channel);
 
-                let code_info = remote
+                let code_info = fork_state
+                    .remote
                     .rt
                     .block_on(wasm_querier.contract_info(contract_addr))?;
-                let code = remote
+                let code = fork_state
+                    .remote
                     .rt
                     .block_on(wasm_querier.code_data(code_info.code_id))?;
                 Ok(code)
             }
             WasmContract::DistantCodeId(DistantCodeId { code_id }) => {
-                let wasm_querier = CosmWasm::new(remote.channel);
+                let wasm_querier = CosmWasm::new(fork_state.remote.channel);
 
-                let code = remote.rt.block_on(wasm_querier.code_data(*code_id))?;
+                let code = fork_state
+                    .remote
+                    .rt
+                    .block_on(wasm_querier.code_data(*code_id))?;
                 Ok(code)
             }
         }
     }
 
-    pub fn run_contract<ExecC: CustomMsg + DeserializeOwned>(
+    pub fn run_contract<
+        QueryC: CustomQuery + DeserializeOwned + 'static,
+        ExecC: CustomMsg + DeserializeOwned,
+    >(
         &self,
         args: InstanceArguments,
-        remote: RemoteChannel,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<WasmRunnerOutput<ExecC>> {
         let InstanceArguments {
             function,
             init_storage,
-            querier_storage,
         } = args;
         let address = function.get_address();
-        let code = self.get_code(remote.clone())?;
+        let code = self.get_code(fork_state.clone())?;
 
-        let api = RealApi::new(&remote.chain.bech32_prefix);
+        let api = RealApi::new(&fork_state.remote.chain.bech32_prefix);
 
         // We create the backend here from outside information;
         let backend = Backend {
             api,
-            storage: DualStorage::new(remote.clone(), address.to_string(), Some(init_storage))?,
-            querier: MockQuerier::<Empty>::new(remote, Some(querier_storage)),
+            storage: DualStorage::new(
+                fork_state.remote.clone(),
+                address.to_string(),
+                Some(init_storage),
+            )?,
+            querier: MockQuerier::<ExecC, QueryC>::new(fork_state),
         };
         let options = InstanceOptions {
             gas_limit: DEFAULT_GAS_LIMIT,
@@ -203,23 +205,27 @@ impl WasmContract {
 
     pub fn after_execution_callback<ExecC>(&self, output: &WasmRunnerOutput<ExecC>) {
         // We log the gas used
-        print!("Gas used {:?} for ", output.gas_used);
-        match output.wasm {
-            WasmOutput::Execute(_) => print!("execution"),
-            WasmOutput::Query(_) => print!("query"),
-            WasmOutput::Instantiate(_) => print!("instantiation"),
-            WasmOutput::Migrate(_) => print!("migration"),
-            WasmOutput::Sudo(_) => print!("sudo"),
-            WasmOutput::Reply(_) => print!("reply"),
-        }
-        println!(" on contract {:?}. ", self);
+        let operation = match output.wasm {
+            WasmOutput::Execute(_) => "execution",
+            WasmOutput::Query(_) => "query",
+            WasmOutput::Instantiate(_) => "instantiation",
+            WasmOutput::Migrate(_) => "migration",
+            WasmOutput::Sudo(_) => "sudo",
+            WasmOutput::Reply(_) => "reply",
+        };
+        log::debug!(
+            "Gas used {:?} for {:} on contract {:?}",
+            output.gas_used,
+            operation,
+            self
+        );
     }
 }
 
 impl<ExecC, QueryC> Contract<ExecC, QueryC> for WasmContract
 where
     ExecC: CustomMsg + DeserializeOwned,
-    QueryC: CustomQuery,
+    QueryC: CustomQuery + DeserializeOwned,
 {
     fn execute(
         &self,
@@ -227,16 +233,15 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        remote: RemoteChannel,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         // We start by building the dependencies we will pass through the wasm executer
         let execute_args = InstanceArguments {
             function: WasmFunction::Execute(ExecuteArgs { env, info, msg }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
-            querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(execute_args, remote)?;
+        let decoded_result = self.run_contract(execute_args, fork_state)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -253,16 +258,15 @@ where
         env: Env,
         info: MessageInfo,
         msg: Vec<u8>,
-        remote: RemoteChannel,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         // We start by building the dependencies we will pass through the wasm executer
         let instantiate_arguments = InstanceArguments {
             function: WasmFunction::Instantiate(InstantiateArgs { env, info, msg }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
-            querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(instantiate_arguments, remote)?;
+        let decoded_result = self.run_contract(instantiate_arguments, fork_state)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -278,16 +282,16 @@ where
         deps: Deps<QueryC>,
         env: Env,
         msg: Vec<u8>,
-        remote: RemoteChannel,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Binary> {
         // We start by building the dependencies we will pass through the wasm executer
         let query_arguments = InstanceArguments {
             function: WasmFunction::Query(QueryArgs { env, msg }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
-            querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result: WasmRunnerOutput<Empty> = self.run_contract(query_arguments, remote)?;
+        let decoded_result: WasmRunnerOutput<ExecC> =
+            self.run_contract(query_arguments, fork_state)?;
 
         self.after_execution_callback(&decoded_result);
 
@@ -303,15 +307,14 @@ where
         deps: DepsMut<QueryC>,
         env: Env,
         msg: Vec<u8>,
-        remote: RemoteChannel,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         let sudo_args = InstanceArguments {
             function: WasmFunction::Sudo(SudoArgs { env, msg }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
-            querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(sudo_args, remote)?;
+        let decoded_result = self.run_contract(sudo_args, fork_state)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -328,15 +331,14 @@ where
         deps: DepsMut<QueryC>,
         env: Env,
         reply: Reply,
-        remote: RemoteChannel,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         let reply_args = InstanceArguments {
             function: WasmFunction::Reply(ReplyArgs { env, reply }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
-            querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(reply_args, remote)?;
+        let decoded_result = self.run_contract(reply_args, fork_state)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);
@@ -353,15 +355,14 @@ where
         deps: DepsMut<QueryC>,
         env: Env,
         msg: Vec<u8>,
-        remote: RemoteChannel,
+        fork_state: ForkState<ExecC, QueryC>,
     ) -> AnyResult<Response<ExecC>> {
         let migrate_args = InstanceArguments {
             function: WasmFunction::Migrate(MigrateArgs { env, msg }),
             init_storage: deps.storage.range(None, None, Order::Ascending).collect(),
-            querier_storage: get_querier_storage(&deps.querier)?,
         };
 
-        let decoded_result = self.run_contract(migrate_args, remote)?;
+        let decoded_result = self.run_contract(migrate_args, fork_state)?;
 
         apply_storage_changes(deps.storage, &decoded_result);
         self.after_execution_callback(&decoded_result);

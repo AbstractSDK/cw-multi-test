@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{Addr, Binary, CodeInfoResponse, Order, Storage};
+use cosmwasm_std::{Addr, Binary, CodeInfoResponse, CustomQuery, Order, Storage};
 use cw_orch_daemon::queriers::{CosmWasm, DaemonQuerier};
 
 use crate::{
     prefixed_storage::prefixed_read,
     wasm::{ContractData, CONTRACTS, NAMESPACE_WASM},
-    wasm_emulation::{channel::RemoteChannel, input::WasmStorage, query::AllQuerier},
+    wasm_emulation::{channel::RemoteChannel, input::WasmStorage, query::AllWasmQuerier},
     WasmKeeper,
 };
 
@@ -60,8 +60,7 @@ impl WasmRemoteQuerier {
     }
 }
 
-impl<ExecC, QueryC> AllQuerier for WasmKeeper<ExecC, QueryC> {
-    type Output = WasmStorage;
+impl<ExecC, QueryC: CustomQuery> AllWasmQuerier for WasmKeeper<ExecC, QueryC> {
     fn query_all(&self, storage: &dyn Storage) -> AnyResult<WasmStorage> {
         let all_local_state: Vec<_> = storage.range(None, None, Order::Ascending).collect();
 

@@ -31,9 +31,8 @@ pub struct BankQuerier {
 }
 
 impl BankQuerier {
-    pub fn new(remote: RemoteChannel, init: Option<Vec<(Addr, NativeBalance)>>) -> Self {
+    pub fn new(remote: RemoteChannel, init: Vec<(Addr, NativeBalance)>) -> Self {
         let balances: HashMap<_, _> = init
-            .unwrap_or(vec![])
             .iter()
             .map(|(s, c)| (s.to_string(), c.clone().into_vec()))
             .collect();

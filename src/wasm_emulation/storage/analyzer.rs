@@ -2,24 +2,23 @@ use crate::prefixed_storage::decode_length;
 use crate::prefixed_storage::to_length_prefixed;
 use crate::prefixed_storage::CONTRACT_STORAGE_PREFIX;
 use crate::wasm_emulation::channel::RemoteChannel;
-use crate::wasm_emulation::input::get_querier_storage;
-use crate::Bank;
+use crate::BankKeeper;
 use crate::Distribution;
 use crate::Gov;
 use crate::Ibc;
 use crate::Module;
 use crate::Staking;
-use crate::Wasm;
+use crate::WasmKeeper;
 use cosmwasm_std::Addr;
 use cosmwasm_std::Api;
 use cosmwasm_std::Coin;
+use cosmwasm_std::CustomMsg;
 use cosmwasm_std::CustomQuery;
 use cosmwasm_std::Storage;
 use cw_orch_daemon::queriers::CosmWasm;
 use cw_orch_daemon::queriers::DaemonQuerier;
 use cw_utils::NativeBalance;
 use rustc_serialize::json::Json;
-use schemars::JsonSchema;
 use serde::Serialize;
 use serde::__private::from_utf8_lossy;
 use serde::de::DeserializeOwned;
@@ -44,15 +43,23 @@ pub struct StorageAnalyzer {
 }
 
 impl StorageAnalyzer {
-    pub fn new<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>(
-        app: &App<BankT, ApiT, StorageT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT>,
+    pub fn new<ApiT, StorageT, CustomT, StakingT, DistrT, IbcT, GovT>(
+        app: &App<
+            BankKeeper,
+            ApiT,
+            StorageT,
+            CustomT,
+            WasmKeeper<CustomT::ExecT, CustomT::QueryT>,
+            StakingT,
+            DistrT,
+            IbcT,
+            GovT,
+        >,
     ) -> AnyResult<Self>
     where
-        CustomT::ExecT:
-            std::fmt::Debug + PartialEq + Clone + JsonSchema + DeserializeOwned + 'static,
+        CustomT::ExecT: CustomMsg + DeserializeOwned + 'static,
         CustomT::QueryT: CustomQuery + DeserializeOwned + 'static,
-        WasmT: Wasm<CustomT::ExecT, CustomT::QueryT>,
-        BankT: Bank,
+
         ApiT: Api,
         StorageT: Storage,
         CustomT: Module,
@@ -62,7 +69,7 @@ impl StorageAnalyzer {
         GovT: Gov,
     {
         Ok(Self {
-            storage: get_querier_storage(&app.wrap())?,
+            storage: app.get_querier_storage()?,
             remote: app.remote.clone(),
         })
     }

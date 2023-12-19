@@ -870,6 +870,7 @@ dependencies = [
  "cw-orch-networks",
  "cw-storage-plus 1.2.0",
  "cw-utils 1.0.3",
+ "cw2 1.1.2",
  "cw20 1.1.2",
  "derivative",
  "env_logger",
@@ -891,6 +892,7 @@ dependencies = [
  "tokio",
  "tonic 0.10.2",
  "treediff",
+ "wasmer",
 ]
 
 [[package]]
@@ -941,7 +943,7 @@ dependencies = [
  "prost-types 0.11.9",
  "rand_core 0.6.4",
  "reqwest",
- "ring 0.17.5",
+ "ring 0.17.6",
  "ripemd",
  "schemars",
  "secp256k1",
@@ -3000,9 +3002,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.17.5"
+version = "0.17.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb0205304757e5d899b9c2e448b867ffd03ae7f988002e47cd24954391394d0b"
+checksum = "684d5e6e18f669ccebf64a92236bb7db9a34f07be010e3627368182027180866"
 dependencies = [
  "cc",
  "getrandom",
@@ -3116,7 +3118,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "629648aced5775d558af50b2b4c7b02983a04b312126d45eeead26e7caa498b9"
 dependencies = [
  "log",
- "ring 0.17.5",
+ "ring 0.17.6",
  "rustls-webpki",
  "sct 0.7.1",
 ]
@@ -3160,7 +3162,7 @@ version = "0.101.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b6275d1ee7a1cd780b64aca7726599a1dbc893b1e64144529e55c3c2f745765"
 dependencies = [
- "ring 0.17.5",
+ "ring 0.17.6",
  "untrusted 0.9.0",
 ]
 
@@ -3240,7 +3242,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da046153aa2352493d6cb7da4b6e5c0c057d8a1d0a9aa8560baffdd945acd414"
 dependencies = [
- "ring 0.17.5",
+ "ring 0.17.6",
  "untrusted 0.9.0",
 ]
 
@@ -3560,9 +3562,9 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "spki"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d1e996ef02c474957d681f1b05213dfb0abab947b446a62d37770b23500184a"
+checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
@@ -4648,7 +4650,7 @@ version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed63aea5ce73d0ff405984102c42de94fc55a6b75765d621c65262469b3c9b53"
 dependencies = [
- "ring 0.17.5",
+ "ring 0.17.6",
  "untrusted 0.9.0",
 ]
 

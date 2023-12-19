@@ -58,6 +58,10 @@ treediff = { version = "4.0.2", features = ["with-rustc-serialize"] }
 rustc-serialize = "0.3.24"
 serde_json = "1.0.105"
 log = "0.4.19"
+wasmer = { version = "=4.2.2", default-features = false, features = [
+    "cranelift",
+    "singlepass",
+] }
 
 [dev-dependencies]
 hex = "0.4.3"
@@ -71,3 +75,4 @@ cosmwasm-schema = "1.2.7"
 # Cavern Test App
 cw20 = "1.0.1"
 moneymarket = { git = "https://github.com/CavernPerson/money-market-contracts" }
+cw2 = "1.1.2"

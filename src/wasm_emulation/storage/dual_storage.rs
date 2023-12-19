@@ -135,9 +135,9 @@ impl Storage for DualStorage {
         let descending_order: i32 = Order::Descending.try_into().unwrap();
 
         let querier_start = if order_i32 == descending_order {
-            end.map(|s| s.to_vec()).unwrap_or(vec![])
+            end.map(|s| s.to_vec()).unwrap_or_default()
         } else {
-            start.map(|s| s.to_vec()).unwrap_or(vec![])
+            start.map(|s| s.to_vec()).unwrap_or_default()
         };
 
         let iter = Iter {
@@ -168,13 +168,13 @@ impl Storage for DualStorage {
         let iterator = match self.iterators.get_mut(&iterator_id) {
             Some(i) => i,
             None => {
-                println!("End next premature");
                 return (
                     Err(BackendError::iterator_does_not_exist(iterator_id)),
                     GasInfo::free(),
                 );
             }
         };
+        // TODO, work with removed keys and don't take them
 
         // 1. We verify that there is enough elements in the distant iterator
         if iterator.distant_iter.position == iterator.distant_iter.data.len()
@@ -226,21 +226,8 @@ impl Storage for DualStorage {
             .data
             .get(iterator.distant_iter.position);
 
-        // We select the distant storage only if the keys are valid (inside the start, end range)
-        let is_valid_distant_key = next_distant.is_some()
-            && (iterator.distant_iter.end.is_none() || // If there is end no bound 
-					iterator.distant_iter.reverse || // if the iterator is reversed, 
-					!gte(next_distant.unwrap().key.clone(), iterator.distant_iter.end.clone().unwrap()))
-            && (iterator.distant_iter.start.is_none()
-                || !iterator.distant_iter.reverse
-                || gte(
-                    next_distant.unwrap().key.clone(),
-                    iterator.distant_iter.start.clone().unwrap(),
-                ));
-
         let key_value = if let Some(local) = next_local {
-            if is_valid_distant_key {
-                let distant = next_distant.unwrap();
+            if let Some(distant) = next_distant {
                 // We compare the two keys with the order and return the higher key
                 let key_local = BigInt::from_bytes_be(Sign::Plus, &local.0);
                 let key_distant = BigInt::from_bytes_be(Sign::Plus, &distant.key);
@@ -253,8 +240,7 @@ impl Storage for DualStorage {
             } else {
                 self.local_storage.next(iterator.local_iter).0.unwrap()
             }
-        } else if is_valid_distant_key {
-            let distant = next_distant.unwrap();
+        } else if let Some(distant) = next_distant {
             iterator.distant_iter.position += 1;
             Some((distant.key.clone(), distant.value.clone()))
         } else {

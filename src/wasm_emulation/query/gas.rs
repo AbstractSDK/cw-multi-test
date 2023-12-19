@@ -19,3 +19,6 @@ pub const GAS_COST_QUERY_ERROR: u64 = 1000;
 // API (from cosmwasm_vm directly)
 pub const GAS_COST_HUMANIZE: u64 = 44;
 pub const GAS_COST_CANONICALIZE: u64 = 55;
+
+// All queries (test)
+pub const GAS_COST_ALL_QUERIES: u64 = 10_000;
