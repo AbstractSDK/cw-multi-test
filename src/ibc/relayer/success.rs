@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     ibc::{
+        events::{SEND_PACKET_EVENT, TIMEOUT_RECEIVE_PACKET_EVENT, WRITE_ACK_EVENT},
         types::{Connection, IbcPacketData, MockIbcQuery},
         IbcPacketRelayingMsg,
     },
@@ -234,6 +235,18 @@ where
     })
 }
 
+#[derive(Debug)]
+pub struct RelayPacketResult {
+    pub receive_tx: AppResponse,
+    pub result: RelayingResult,
+}
+
+#[derive(Debug)]
+pub enum RelayingResult {
+    Timeout(AppResponse),
+    Acknowledgement { tx: AppResponse, ack: Binary },
+}
+
 pub fn relay_packets_in_tx<
     BankT1,
     ApiT1,
@@ -257,7 +270,7 @@ pub fn relay_packets_in_tx<
     app1: &mut App<BankT1, ApiT1, StorageT1, CustomT1, WasmT1, StakingT1, DistrT1, IbcT1, GovT1>,
     app2: &mut App<BankT2, ApiT2, StorageT2, CustomT2, WasmT2, StakingT2, DistrT2, IbcT2, GovT2>,
     app1_tx_response: AppResponse,
-) -> AnyResult<Vec<(AppResponse, AppResponse, Binary)>>
+) -> AnyResult<Vec<RelayPacketResult>>
 where
     CustomT1::ExecT: Clone + fmt::Debug + PartialEq + JsonSchema + DeserializeOwned + 'static,
     CustomT1::QueryT: CustomQuery + DeserializeOwned + 'static,
@@ -284,16 +297,17 @@ where
     GovT2: Gov,
 {
     // Find all packets and their data
-    let packets = get_all_event_attr_value(&app1_tx_response, "send_packet", "packet_sequence");
-    let channels = get_all_event_attr_value(&app1_tx_response, "send_packet", "packet_src_channel");
-    let ports = get_all_event_attr_value(&app1_tx_response, "send_packet", "packet_src_port");
+    let packets = get_all_event_attr_value(&app1_tx_response, SEND_PACKET_EVENT, "packet_sequence");
+    let channels =
+        get_all_event_attr_value(&app1_tx_response, SEND_PACKET_EVENT, "packet_src_channel");
+    let ports = get_all_event_attr_value(&app1_tx_response, SEND_PACKET_EVENT, "packet_src_port");
 
     // For all packets, query the packetdata and relay them
 
     let mut packet_forwarding = vec![];
 
     for i in 0..packets.len() {
-        let (rcv_response, ack_response, ack) = relay_packet(
+        let relay_response = relay_packet(
             app1,
             app2,
             ports[i].clone(),
@@ -301,7 +315,7 @@ where
             packets[i].parse()?,
         )?;
 
-        packet_forwarding.push((rcv_response, ack_response, ack));
+        packet_forwarding.push(relay_response);
     }
 
     Ok(packet_forwarding)
@@ -333,7 +347,7 @@ pub fn relay_packet<
     src_port_id: String,
     src_channel_id: String,
     sequence: u64,
-) -> AnyResult<(AppResponse, AppResponse, Binary)>
+) -> AnyResult<RelayPacketResult>
 where
     CustomT1::ExecT: Clone + fmt::Debug + PartialEq + JsonSchema + DeserializeOwned + 'static,
     CustomT1::QueryT: CustomQuery + DeserializeOwned + 'static,
@@ -370,18 +384,36 @@ where
         packet: packet.clone(),
     }))?;
 
-    let hex_ack =
-        get_event_attr_value(&receive_response, "write_acknowledgement", "packet_ack_hex")?;
+    // We start by verifying that we have an acknowledgment and not a timeout
+    if has_event(&receive_response, TIMEOUT_RECEIVE_PACKET_EVENT) {
+        // If there was a timeout, we timeout the packet on the sending chain
+        // TODO: We don't handle the chain closure in here for now in case of ordered channels
+
+        let timeout_response = app1.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::Timeout { packet }))?;
+
+        return Ok(RelayPacketResult {
+            receive_tx: receive_response,
+            result: RelayingResult::Timeout(timeout_response),
+        });
+    }
+
+    // Then we query the packet ack to deliver the response on chain 1
+    let hex_ack = get_event_attr_value(&receive_response, WRITE_ACK_EVENT, "packet_ack_hex")?;
 
     let ack = Binary::from(hex::decode(hex_ack)?);
 
-    // Then we query the packet ack to deliver the response on chain 1
     let ack_response = app1.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::Acknowledge {
         packet,
         ack: ack.clone(),
     }))?;
 
-    Ok((receive_response, ack_response, ack))
+    Ok(RelayPacketResult {
+        receive_tx: receive_response,
+        result: RelayingResult::Acknowledgement {
+            tx: ack_response,
+            ack,
+        },
+    })
 }
 
 pub fn get_event_attr_value(
@@ -402,6 +434,15 @@ pub fn get_event_attr_value(
     Err(StdError::generic_err(format!(
         "event of type {event_type} does not have a value at key {attr_key}"
     )))
+}
+
+pub fn has_event(response: &AppResponse, event_type: &str) -> bool {
+    for event in &response.events {
+        if event.ty == event_type {
+            return true;
+        }
+    }
+    return false;
 }
 
 pub fn get_all_event_attr_value(

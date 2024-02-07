@@ -7,6 +7,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     ibc::{
+        events::WRITE_ACK_EVENT,
         types::{IbcPacketData, MockIbcQuery},
         IbcPacketRelayingMsg,
     },
@@ -144,8 +145,7 @@ where
         packet: packet.clone(),
     }))?;
 
-    let hex_ack =
-        get_event_attr_value(&receive_response, "write_acknowledgement", "packet_ack_hex")?;
+    let hex_ack = get_event_attr_value(&receive_response, WRITE_ACK_EVENT, "packet_ack_hex")?;
 
     let ack = Binary::from(hex::decode(hex_ack)?);
 

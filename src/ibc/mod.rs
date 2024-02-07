@@ -7,11 +7,11 @@ use crate::{AcceptingModule, FailingModule, Module};
 
 pub mod addresses;
 pub mod api;
+pub mod events;
 pub mod relayer;
 mod simple_ibc;
 mod state;
 pub mod types;
-
 pub use self::types::IbcPacketRelayingMsg;
 use self::types::MockIbcQuery;
 pub use simple_ibc::IbcSimpleModule;

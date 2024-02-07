@@ -6,6 +6,7 @@ use crate::{
     ibc::{
         addresses::MockAddressGenerator,
         api::MockApiBech32,
+        events::WRITE_ACK_EVENT,
         relayer::{create_channel, create_connection, get_event_attr_value, relay_packets_in_tx},
         simple_ibc::IbcSimpleModule,
     },
@@ -256,7 +257,11 @@ fn polytone() -> anyhow::Result<()> {
     assert_eq!(packet_txs.len(), 1);
 
     println!("{:?}", packet_txs);
-    let contract_addr = get_event_attr_value(&packet_txs[0].0, "instantiate", "_contract_address")?;
+    let contract_addr = get_event_attr_value(
+        &packet_txs[0].receive_tx,
+        "instantiate",
+        "_contract_address",
+    )?;
 
     // We test if the proxy is instantiated on app2
     let test: ContractInfoResponse =
@@ -268,8 +273,8 @@ fn polytone() -> anyhow::Result<()> {
 
     // Assert the polytone result (executed_by field of the ack)
     let ack: Callback = serde_json::from_str(&get_event_attr_value(
-        &packet_txs[0].0,
-        "write_acknowledgement",
+        &packet_txs[0].receive_tx,
+        WRITE_ACK_EVENT,
         "packet_ack",
     )?)?;
 

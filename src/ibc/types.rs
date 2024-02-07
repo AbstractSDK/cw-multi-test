@@ -45,6 +45,8 @@ pub struct ChannelInfo {
     pub last_packet_relayed: u64,
 
     pub info: IbcChannel,
+
+    pub open: bool,
 }
 
 #[cosmwasm_schema::cw_serde]
@@ -112,6 +114,13 @@ pub struct IbcPacketData {
 }
 
 #[cosmwasm_schema::cw_serde]
+pub struct IbcPacketReceived {
+    pub data: IbcPacketData,
+    /// Indicates wether the packet was received with a timeout
+    pub timeout: bool,
+}
+
+#[cosmwasm_schema::cw_serde]
 pub struct IbcPacketAck {
     pub ack: Binary,
 }
@@ -143,8 +152,11 @@ pub enum IbcPacketRelayingMsg {
         counterparty_version: Option<String>,
         counterparty_endpoint: IbcEndpoint,
     },
-    CloseChannel {},
-
+    CloseChannel {
+        port_id: String,
+        channel_id: String,
+        init: bool,
+    },
     Send {
         port_id: String,
         channel_id: String,
