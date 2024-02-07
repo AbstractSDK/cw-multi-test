@@ -16,6 +16,10 @@ pub trait AddressGenerator {
         since = "0.18.0",
         note = "use `contract_address` or `predictable_contract_address` instead; will be removed in version 1.0.0"
     )]
+    /// Generates a _non-predictable_ contract address based on the number of contract's instances.
+    /// This is a simplified version of simulating contract addresses that is deprecated in favour of
+    /// [contract_address](Self::contract_address) and
+    /// [predictable_contract_address](Self::predictable_contract_address) functions.
     fn next_address(&self, storage: &mut dyn Storage) -> Addr {
         //TODO After removing this function in version 1.0, make `CONTRACTS` and `NAMESPACE_WASM` private in `wasm.rs`.
         let count = CONTRACTS
@@ -108,16 +112,17 @@ pub trait AddressGenerator {
     /// ```
     fn predictable_contract_address(
         &self,
-        _api: &dyn Api,
+        api: &dyn Api,
         _storage: &mut dyn Storage,
         _code_id: u64,
         _instance_id: u64,
         _checksum: &[u8],
-        _creator: &CanonicalAddr,
+        creator: &CanonicalAddr,
         salt: &[u8],
     ) -> AnyResult<Addr> {
         Ok(Addr::unchecked(format!(
-            "contract{}",
+            "contract/{}/{}",
+            api.addr_humanize(creator)?,
             HexBinary::from(salt).to_hex()
         )))
     }

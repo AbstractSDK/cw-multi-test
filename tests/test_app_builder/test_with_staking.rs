@@ -1,24 +1,37 @@
 use crate::test_app_builder::MyKeeper;
-use cosmwasm_std::{Addr, Coin, StakingMsg, StakingQuery};
-use cw_multi_test::{AppBuilder, Executor, Staking, StakingSudo};
+use cosmwasm_std::{Addr, Api, BlockInfo, Coin, CustomQuery, StakingMsg, StakingQuery, Storage};
+use cw_multi_test::error::AnyResult;
+use cw_multi_test::{
+    no_init, AppBuilder, AppResponse, CosmosRouter, Executor, Staking, StakingSudo,
+};
 
 type MyStakeKeeper = MyKeeper<StakingMsg, StakingQuery, StakingSudo>;
 
-impl Staking for MyStakeKeeper {}
+impl Staking for MyStakeKeeper {
+    fn process_queue<ExecC, QueryC: CustomQuery>(
+        &self,
+        api: &dyn Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &BlockInfo,
+    ) -> AnyResult<AppResponse> {
+        let _ = (api, storage, router, block);
+        todo!()
+    }
+}
 
 const EXECUTE_MSG: &str = "staking execute called";
 const QUERY_MSG: &str = "staking query called";
 const SUDO_MSG: &str = "staking sudo called";
 
 #[test]
-#[cfg(feature = "staking")]
 fn building_app_with_custom_staking_should_work() {
     // build custom stake keeper
     let stake_keeper = MyStakeKeeper::new(EXECUTE_MSG, QUERY_MSG, SUDO_MSG);
 
     // build the application with custom stake keeper
     let app_builder = AppBuilder::default();
-    let mut app = app_builder.with_staking(stake_keeper).build(|_, _, _| {});
+    let mut app = app_builder.with_staking(stake_keeper).build(no_init);
 
     // prepare additional input data
     let validator = Addr::unchecked("recipient");

@@ -1,8 +1,5 @@
-use std::fmt;
-
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{from_json, Api, Binary, CustomQuery, Storage};
-use schemars::JsonSchema;
+use cosmwasm_std::{from_json, Api, Binary, CustomMsg, CustomQuery, Storage};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -62,7 +59,7 @@ pub fn relay_packets_in_tx<
     app1_tx_response: AppResponse,
 ) -> AnyResult<Vec<RelayPacketResult>>
 where
-    CustomT1::ExecT: Clone + fmt::Debug + PartialEq + JsonSchema + DeserializeOwned + 'static,
+    CustomT1::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT1::QueryT: CustomQuery + DeserializeOwned + 'static,
     WasmT1: Wasm<CustomT1::ExecT, CustomT1::QueryT>,
     BankT1: Bank,
@@ -74,7 +71,7 @@ where
     IbcT1: Ibc,
     GovT1: Gov,
 
-    CustomT2::ExecT: Clone + fmt::Debug + PartialEq + JsonSchema + DeserializeOwned + 'static,
+    CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT2::QueryT: CustomQuery + DeserializeOwned + 'static,
     WasmT2: Wasm<CustomT2::ExecT, CustomT2::QueryT>,
     BankT2: Bank,
@@ -139,7 +136,7 @@ pub fn relay_packet<
     sequence: u64,
 ) -> AnyResult<RelayPacketResult>
 where
-    CustomT1::ExecT: Clone + fmt::Debug + PartialEq + JsonSchema + DeserializeOwned + 'static,
+    CustomT1::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT1::QueryT: CustomQuery + DeserializeOwned + 'static,
     WasmT1: Wasm<CustomT1::ExecT, CustomT1::QueryT>,
     BankT1: Bank,
@@ -151,7 +148,7 @@ where
     IbcT1: Ibc,
     GovT1: Gov,
 
-    CustomT2::ExecT: Clone + fmt::Debug + PartialEq + JsonSchema + DeserializeOwned + 'static,
+    CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT2::QueryT: CustomQuery + DeserializeOwned + 'static,
     WasmT2: Wasm<CustomT2::ExecT, CustomT2::QueryT>,
     BankT2: Bank,

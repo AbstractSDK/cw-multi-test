@@ -1,35 +1,17 @@
 use crate::{Contract, ContractWrapper};
 use cosmwasm_std::{
-    Binary, CosmosMsg, Deps, DepsMut, Empty, Env, GovMsg, IbcMsg, MessageInfo, Response, StdResult,
+    Binary, CosmosMsg, Deps, DepsMut, Empty, Env, MessageInfo, Response, StdResult,
 };
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ExecMsg {
-    Ibc {},
-    Gov {},
-}
 
 fn instantiate(_deps: DepsMut, _env: Env, _info: MessageInfo, _msg: Empty) -> StdResult<Response> {
     Ok(Response::new())
 }
 
-fn execute(_deps: DepsMut, _env: Env, _info: MessageInfo, msg: ExecMsg) -> StdResult<Response> {
-    let msg: CosmosMsg = if let ExecMsg::Ibc {} = msg {
-        IbcMsg::CloseChannel {
-            channel_id: "channel".to_string(),
-        }
-        .into()
-    } else {
-        GovMsg::Vote {
-            proposal_id: 1,
-            vote: cosmwasm_std::VoteOption::No,
-        }
-        .into()
-    };
-
-    let resp = Response::new().add_message(msg);
-    Ok(resp)
+fn execute(_deps: DepsMut, _env: Env, _info: MessageInfo, _msg: Empty) -> StdResult<Response> {
+    Ok(Response::new().add_message(CosmosMsg::Stargate {
+        type_url: "/this.is.a.stargate.test.helper".to_string(),
+        value: Default::default(),
+    }))
 }
 
 fn query(_deps: Deps, _env: Env, _msg: Empty) -> StdResult<Binary> {
