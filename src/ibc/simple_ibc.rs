@@ -23,7 +23,8 @@ pub struct IbcSimpleModule;
 
 use super::{
     events::{
-        ACK_PACKET_EVENT, RECEIVE_PACKET_EVENT, SEND_PACKET_EVENT, TIMEOUT_PACKET_EVENT,
+        ACK_PACKET_EVENT, CHANNEL_CLOSE_CONFIRM_EVENT, CHANNEL_CLOSE_INIT_EVENT,
+        RECEIVE_PACKET_EVENT, SEND_PACKET_EVENT, TIMEOUT_PACKET_EVENT,
         TIMEOUT_RECEIVE_PACKET_EVENT, WRITE_ACK_EVENT,
     },
     state::{
@@ -419,14 +420,14 @@ impl IbcSimpleModule {
                 IbcChannelCloseMsg::CloseInit {
                     channel: channel_info.info.clone(),
                 },
-                Event::new("channel_close_init"),
+                Event::new(CHANNEL_CLOSE_INIT_EVENT),
             )
         } else {
             (
                 IbcChannelCloseMsg::CloseConfirm {
                     channel: channel_info.info.clone(),
                 },
-                Event::new("channel_close_confirm"),
+                Event::new(CHANNEL_CLOSE_CONFIRM_EVENT),
             )
         };
 
@@ -1268,6 +1269,14 @@ impl Module for IbcSimpleModule {
                     .collect::<Result<Vec<_>, _>>()?;
 
                 Ok(to_json_binary(&connections)?)
+            }
+            MockIbcQuery::ChannelInfo {
+                port_id,
+                channel_id,
+            } => {
+                let channel_info = CHANNEL_INFO.load(&ibc_storage, (port_id, channel_id))?;
+
+                Ok(to_json_binary(&channel_info)?)
             }
         }
     }

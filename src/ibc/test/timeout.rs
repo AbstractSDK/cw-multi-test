@@ -8,9 +8,10 @@ use crate::{
         events::TIMEOUT_RECEIVE_PACKET_EVENT,
         relayer::{
             create_channel, create_connection, has_event, relay_packets_in_tx,
-            ChannelCreationResult,
+            ChannelCreationResult, RelayingResult,
         },
         simple_ibc::IbcSimpleModule,
+        types::{ChannelInfo, MockIbcQuery},
     },
     AppBuilder, Executor,
 };
@@ -88,7 +89,9 @@ fn simple_transfer_timeout() -> anyhow::Result<()> {
 
     // We make sure the response contains a timeout
     assert_eq!(resp.len(), 1);
-
+    if let RelayingResult::Acknowledgement { .. } = resp[0].result {
+        panic!("Expected a timeout");
+    }
     assert!(has_event(&resp[0].receive_tx, TIMEOUT_RECEIVE_PACKET_EVENT));
 
     // We make sure the balance of the recipient has not changed
@@ -121,5 +124,107 @@ fn simple_transfer_timeout() -> anyhow::Result<()> {
     assert_eq!(balances.amount.len(), 1);
     assert_eq!(balances.amount[0].amount, funds.amount);
     assert_eq!(balances.amount[0].denom, funds.denom);
+    Ok(())
+}
+
+#[test]
+fn simple_transfer_timeout_closes_channel() -> anyhow::Result<()> {
+    let funds = coin(100_000, "ufund");
+    let fund_owner = "owner";
+    let fund_recipient = "recipient";
+
+    // We mint some funds to the owner
+    let mut app1 = AppBuilder::default()
+        .with_ibc(IbcSimpleModule)
+        .build(|router, api, storage| {
+            router
+                .bank
+                .init_balance(
+                    storage,
+                    &api.addr_validate(fund_owner).unwrap(),
+                    vec![funds.clone()],
+                )
+                .unwrap();
+        });
+    let mut app2 = AppBuilder::default()
+        .with_ibc(IbcSimpleModule)
+        .build(|_, _, _| {});
+
+    let port1 = "transfer".to_string();
+    let port2 = "transfer".to_string();
+
+    let (src_connection_id, _) = create_connection(&mut app1, &mut app2)?;
+
+    // We start by creating channels
+    let ChannelCreationResult {
+        src_channel,
+        dst_channel,
+        ..
+    } = create_channel(
+        &mut app1,
+        &mut app2,
+        src_connection_id,
+        port1.clone(),
+        port2.clone(),
+        "ics20-1".to_string(),
+        IbcOrder::Ordered,
+    )?;
+
+    // We send an IBC transfer Cosmos Msg on app 1
+    let send_response = app1.execute(
+        Addr::unchecked(fund_owner),
+        CosmosMsg::Ibc(IbcMsg::Transfer {
+            channel_id: src_channel.clone(),
+            to_address: fund_recipient.to_string(),
+            amount: funds.clone(),
+            timeout: IbcTimeout::with_block(IbcTimeoutBlock {
+                revision: 1,
+                height: app2.block_info().height, // this will have the effect of a timeout when relaying the packets
+            }),
+        }),
+    )?;
+
+    // We make sure the channel is open
+    let channel_info: ChannelInfo = from_json(app1.ibc_query(MockIbcQuery::ChannelInfo {
+        port_id: port1.clone(),
+        channel_id: src_channel.clone(),
+    })?)?;
+    assert!(channel_info.open);
+    // We make sure the channel is open
+    let channel_info: ChannelInfo = from_json(app2.ibc_query(MockIbcQuery::ChannelInfo {
+        port_id: port2.clone(),
+        channel_id: dst_channel.clone(),
+    })?)?;
+    assert!(channel_info.open);
+
+    // We relaying all packets found in the transaction
+    let resp = relay_packets_in_tx(&mut app1, &mut app2, send_response)?;
+
+    // We make sure the response contains a timeout
+    assert_eq!(resp.len(), 1);
+    match resp[0].result.clone() {
+        RelayingResult::Acknowledgement { .. } => panic!("Expected a timeout"),
+        RelayingResult::Timeout {
+            close_channel_confirm,
+            ..
+        } => {
+            // We make sure the confirm close transaction was executed
+            assert!(close_channel_confirm.is_some())
+        }
+    }
+
+    // We make sure the channel is closed
+    let channel_info: ChannelInfo = from_json(app1.ibc_query(MockIbcQuery::ChannelInfo {
+        port_id: port1,
+        channel_id: src_channel,
+    })?)?;
+    assert!(!channel_info.open);
+    // We make sure the channel is closed
+    let channel_info: ChannelInfo = from_json(app2.ibc_query(MockIbcQuery::ChannelInfo {
+        port_id: port2.clone(),
+        channel_id: dst_channel.clone(),
+    })?)?;
+    assert!(!channel_info.open);
+
     Ok(())
 }

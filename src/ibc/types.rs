@@ -234,6 +234,11 @@ pub enum MockIbcQuery {
     ChainConnections {
         chain_id: String,
     },
+    /// Gets information on a channel
+    ChannelInfo {
+        port_id: String,
+        channel_id: String,
+    },
 }
 
 impl From<IbcQuery> for MockIbcQuery {
