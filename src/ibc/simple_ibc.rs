@@ -582,7 +582,6 @@ impl IbcSimpleModule {
         }
 
         // We take a look at the timeout status of the packet
-
         let timeout = packet.timeout.clone();
         let mut has_timeout = false;
         if let Some(packet_block) = timeout.block() {
@@ -613,20 +612,27 @@ impl IbcSimpleModule {
         )?;
 
         // If the packet has timeout on an ordered channel, we need to return an appropriate response AND close the channel
-        if has_timeout && channel_info.info.order == IbcOrder::Ordered {
-            // We send a close channel response
-            let res = transactional(storage, |write_cache, _| {
-                router.sudo(
-                    api,
-                    write_cache,
-                    block,
-                    SudoMsg::Ibc(IbcPacketRelayingMsg::CloseChannel {
-                        port_id: packet.dst_port_id.clone(),
-                        channel_id: packet.dst_channel_id.clone(),
-                        init: true,
-                    }),
-                )
-            })?;
+        if has_timeout {
+            let res = if channel_info.info.order == IbcOrder::Ordered {
+                // We send a close channel response
+                transactional(storage, |write_cache, _| {
+                    router.sudo(
+                        api,
+                        write_cache,
+                        block,
+                        SudoMsg::Ibc(IbcPacketRelayingMsg::CloseChannel {
+                            port_id: packet.dst_port_id.clone(),
+                            channel_id: packet.dst_channel_id.clone(),
+                            init: true,
+                        }),
+                    )
+                })?
+            } else {
+                AppResponse {
+                    events: vec![],
+                    data: None,
+                }
+            };
 
             // We add timeout events
             let timeout_height = packet.timeout.block().unwrap_or(IbcTimeoutBlock {
