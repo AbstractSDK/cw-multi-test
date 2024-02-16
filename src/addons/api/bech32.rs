@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 /// [`Bech32`]:https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
 pub struct MockApiBech32 {
     api: MockApi,
-    prefix: &'static str,
+    prefix: String,
     variant: Variant,
 }
 
@@ -29,16 +29,16 @@ impl MockApiBech32 {
     /// assert_eq!(addr.as_str(),
     ///            "juno1h34lmpywh4upnjdg90cjf4j70aee6z8qqfspugamjp42e4q28kqsksmtyp");
     /// ```
-    pub fn new(prefix: &'static str) -> Self {
+    pub fn new(prefix: &str) -> Self {
         Self::new_with_variant(prefix, Variant::Bech32)
     }
 
     /// Creates `Api` implementation that uses specified prefix
     /// to generate addresses in format defined by provided Bech32 variant.
-    pub(crate) fn new_with_variant(prefix: &'static str, variant: Variant) -> Self {
+    pub(crate) fn new_with_variant(prefix: &str, variant: Variant) -> Self {
         Self {
             api: MockApi::default(),
-            prefix,
+            prefix: prefix.to_string(),
             variant,
         }
     }
@@ -108,7 +108,7 @@ impl Api for MockApiBech32 {
     ///            addr.as_str());
     /// ```
     fn addr_humanize(&self, canonical: &CanonicalAddr) -> StdResult<Addr> {
-        if let Ok(encoded) = encode(self.prefix, canonical.as_slice().to_base32(), self.variant) {
+        if let Ok(encoded) = encode(&self.prefix, canonical.as_slice().to_base32(), self.variant) {
             Ok(Addr::unchecked(encoded))
         } else {
             Err(StdError::generic_err("Invalid canonical address"))
@@ -179,7 +179,7 @@ impl MockApiBech32 {
     /// format is not possible, especially when prefix is too long or empty.
     pub fn addr_make(&self, input: &str) -> Addr {
         let digest = Sha256::digest(input).to_vec();
-        match encode(self.prefix, digest.to_base32(), self.variant) {
+        match encode(&self.prefix, digest.to_base32(), self.variant) {
             Ok(address) => Addr::unchecked(address),
             Err(reason) => panic!("Generating address failed with reason: {}", reason),
         }
