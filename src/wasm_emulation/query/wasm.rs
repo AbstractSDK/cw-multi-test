@@ -198,16 +198,17 @@ impl<
                     )
                 };
 
-                let result = if let Err(e) = result {
-                    return (
-                        SystemResult::Err(SystemError::InvalidRequest {
-                            error: format!("Error querying a contract: {}", e),
-                            request: msg.clone(),
-                        }),
-                        GasInfo::with_externally_used(0),
-                    );
-                } else {
-                    result.unwrap()
+                let result = match result {
+                    Err(e) => {
+                        return (
+                            SystemResult::Err(SystemError::InvalidRequest {
+                                error: format!("Error querying a contract: {}", e),
+                                request: msg.clone(),
+                            }),
+                            GasInfo::with_externally_used(0),
+                        )
+                    }
+                    Ok(result) => result,
                 };
 
                 (
@@ -230,7 +231,17 @@ impl<
                     res.checksum = code_data.checksum.clone();
                     res
                 } else {
-                    WasmRemoteQuerier::code_info(self.fork_state.remote.clone(), *code_id).unwrap()
+                    let maybe_code_info =
+                        WasmRemoteQuerier::code_info(self.fork_state.remote.clone(), *code_id);
+
+                    if let Ok(code_info) = maybe_code_info {
+                        code_info
+                    } else {
+                        return (
+                            SystemResult::Err(SystemError::NoSuchCode { code_id: *code_id }),
+                            GasInfo::with_externally_used(GAS_COST_CONTRACT_INFO),
+                        );
+                    }
                 };
                 (
                     SystemResult::Ok(to_json_binary(&res).into()),
