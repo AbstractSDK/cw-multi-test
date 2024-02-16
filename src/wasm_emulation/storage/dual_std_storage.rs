@@ -190,10 +190,7 @@ impl<'a> Storage for DualStorage<'a> {
         end: Option<&[u8]>,
         order: Order,
     ) -> Box<dyn Iterator<Item = Record> + 'b> {
-        let order_i32: i32 = order.try_into().unwrap();
-        let descending_order: i32 = Order::Descending.try_into().unwrap();
-
-        let querier_start = if order_i32 == descending_order {
+        let querier_start = if order == Order::Descending {
             end.map(|s| s.to_vec()).unwrap_or_default()
         } else {
             start.map(|s| s.to_vec()).unwrap_or_default()
@@ -208,7 +205,7 @@ impl<'a> Storage for DualStorage<'a> {
                 key: Some(querier_start),
                 end: end.map(|e| e.to_vec()),
                 start: start.map(|e| e.to_vec()),
-                reverse: order_i32 == descending_order,
+                reverse: order == Order::Descending,
             },
             local_iter: self.local_storage.range(start, end, order).peekable(),
         });

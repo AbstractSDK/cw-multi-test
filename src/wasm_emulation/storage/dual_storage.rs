@@ -131,10 +131,7 @@ impl Storage for DualStorage {
         let gas_info = GasInfo::with_externally_used(GAS_COST_RANGE);
         let iterator_id = self.local_storage.scan(start, end, order).0.unwrap();
 
-        let order_i32: i32 = order.try_into().unwrap();
-        let descending_order: i32 = Order::Descending.try_into().unwrap();
-
-        let querier_start = if order_i32 == descending_order {
+        let querier_start = if order == Order::Descending {
             end.map(|s| s.to_vec()).unwrap_or_default()
         } else {
             start.map(|s| s.to_vec()).unwrap_or_default()
@@ -148,7 +145,7 @@ impl Storage for DualStorage {
                 key: Some(querier_start),
                 end: end.map(|e| e.to_vec()),
                 start: start.map(|e| e.to_vec()),
-                reverse: order_i32 == descending_order,
+                reverse: order == Order::Descending,
             },
         };
 

@@ -1,14 +1,13 @@
 use std::{
     error::Error,
     fmt::{self, Debug, Display},
-    ops::Deref,
 };
 
 use schemars::JsonSchema;
 
 use cosmwasm_std::{
-    from_json, Binary, CosmosMsg, CustomMsg, CustomQuery, Deps, DepsMut, Empty, Env, MessageInfo,
-    QuerierWrapper, Reply, Response, StdError, SubMsg,
+    from_json, Binary, CustomMsg, CustomQuery, Deps, DepsMut, Empty, Env, MessageInfo,
+    QuerierWrapper, Reply, Response, StdError,
 };
 
 use anyhow::Result as AnyResult;
@@ -225,63 +224,6 @@ where
             reply_fn: self.reply_fn,
             migrate_fn: Some(migrate_fn),
         }
-    }
-}
-
-fn decustomize_deps_mut<'a, Q>(deps: &'a mut DepsMut<Q>) -> DepsMut<'a, Empty>
-where
-    Q: CustomQuery + DeserializeOwned + 'static,
-{
-    DepsMut {
-        storage: deps.storage,
-        api: deps.api,
-        querier: QuerierWrapper::new(deps.querier.deref()),
-    }
-}
-
-fn decustomize_deps<'a, Q>(deps: &'a Deps<'a, Q>) -> Deps<'a, Empty>
-where
-    Q: CustomQuery + DeserializeOwned + 'static,
-{
-    Deps {
-        storage: deps.storage,
-        api: deps.api,
-        querier: QuerierWrapper::new(deps.querier.deref()),
-    }
-}
-
-fn customize_response<C>(resp: Response<Empty>) -> Response<C>
-where
-    C: Clone + fmt::Debug + PartialEq + JsonSchema,
-{
-    let mut customized_resp = Response::<C>::new()
-        .add_submessages(resp.messages.into_iter().map(customize_msg::<C>))
-        .add_events(resp.events)
-        .add_attributes(resp.attributes);
-    customized_resp.data = resp.data;
-    customized_resp
-}
-
-fn customize_msg<C>(msg: SubMsg<Empty>) -> SubMsg<C>
-where
-    C: Clone + fmt::Debug + PartialEq + JsonSchema,
-{
-    SubMsg {
-        msg: match msg.msg {
-            CosmosMsg::Wasm(wasm) => CosmosMsg::Wasm(wasm),
-            CosmosMsg::Bank(bank) => CosmosMsg::Bank(bank),
-            CosmosMsg::Staking(staking) => CosmosMsg::Staking(staking),
-            CosmosMsg::Distribution(distribution) => CosmosMsg::Distribution(distribution),
-            CosmosMsg::Custom(_) => unreachable!(),
-            #[cfg(feature = "stargate")]
-            CosmosMsg::Ibc(ibc) => CosmosMsg::Ibc(ibc),
-            #[cfg(feature = "stargate")]
-            CosmosMsg::Stargate { type_url, value } => CosmosMsg::Stargate { type_url, value },
-            _ => panic!("unknown message variant {:?}", msg),
-        },
-        id: msg.id,
-        gas_limit: msg.gas_limit,
-        reply_on: msg.reply_on,
     }
 }
 

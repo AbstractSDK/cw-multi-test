@@ -531,9 +531,18 @@ where
     }
 
     pub fn query_raw(&self, address: Addr, storage: &dyn Storage, key: &[u8]) -> Binary {
-        let storage = self.contract_storage_readonly(storage, &address);
-        let data = storage.get(key).unwrap_or_default();
-        data.into()
+        let local_key = self.contract_storage_readonly(storage, &address).get(key);
+        if let Some(local_key) = local_key {
+            local_key.into()
+        } else {
+            WasmRemoteQuerier::raw_query(
+                self.remote.clone().unwrap(),
+                address.to_string(),
+                key.into(),
+            )
+            .unwrap_or_default()
+            .into()
+        }
     }
 
     fn send<T>(
