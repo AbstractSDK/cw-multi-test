@@ -56,8 +56,21 @@ impl<
                 {
                     local_contract.clone()
                 } else {
-                    WasmRemoteQuerier::load_distant_contract(self.fork_state.remote.clone(), &addr)
-                        .unwrap()
+                    let maybe_distant_contract = WasmRemoteQuerier::load_distant_contract(
+                        self.fork_state.remote.clone(),
+                        &addr,
+                    );
+
+                    if let Ok(contract) = maybe_distant_contract {
+                        contract
+                    } else {
+                        return (
+                            SystemResult::Err(SystemError::NoSuchContract {
+                                addr: contract_addr.to_string(),
+                            }),
+                            GasInfo::with_externally_used(GAS_COST_CONTRACT_INFO),
+                        );
+                    }
                 };
                 let mut response = ContractInfoResponse::default();
                 response.code_id = data.code_id;
