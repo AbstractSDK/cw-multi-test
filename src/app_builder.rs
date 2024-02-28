@@ -1,9 +1,9 @@
 //!AppBuilder helps you set up your test blockchain environment step by step [App].
 
+use crate::ibc::IbcSimpleModule;
 use crate::{
     App, Bank, BankKeeper, Distribution, DistributionKeeper, FailingModule, Gov, GovFailingModule,
-    Ibc, IbcFailingModule, Module, Router, StakeKeeper, Staking, Stargate, StargateFailing, Wasm,
-    WasmKeeper,
+    Ibc, Module, Router, StakeKeeper, Staking, Stargate, StargateFailing, Wasm, WasmKeeper,
 };
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
 use cosmwasm_std::{Api, BlockInfo, CustomMsg, CustomQuery, Empty, Storage};
@@ -16,7 +16,7 @@ use std::fmt::Debug;
 ///
 /// ```
 /// # use cosmwasm_std::Empty;
-/// # use cw_multi_test::{BasicAppBuilder, FailingModule, Module, no_init};
+/// # use  abstract_cw_multi_test::{BasicAppBuilder, FailingModule, Module};
 /// # type MyHandler = FailingModule<Empty, Empty, Empty>;
 /// # type MyExecC = Empty;
 /// # type MyQueryC = Empty;
@@ -36,7 +36,7 @@ pub type BasicAppBuilder<ExecC, QueryC> = AppBuilder<
     WasmKeeper<ExecC, QueryC>,
     StakeKeeper,
     DistributionKeeper,
-    IbcFailingModule,
+    IbcSimpleModule,
     GovFailingModule,
     StargateFailing,
 >;
@@ -66,7 +66,7 @@ impl Default
         WasmKeeper<Empty, Empty>,
         StakeKeeper,
         DistributionKeeper,
-        IbcFailingModule,
+        IbcSimpleModule,
         GovFailingModule,
         StargateFailing,
     >
@@ -85,7 +85,7 @@ impl
         WasmKeeper<Empty, Empty>,
         StakeKeeper,
         DistributionKeeper,
-        IbcFailingModule,
+        IbcSimpleModule,
         GovFailingModule,
         StargateFailing,
     >
@@ -101,7 +101,7 @@ impl
             custom: FailingModule::new(),
             staking: StakeKeeper::new(),
             distribution: DistributionKeeper::new(),
-            ibc: IbcFailingModule::new(),
+            ibc: IbcSimpleModule,
             gov: GovFailingModule::new(),
             stargate: StargateFailing,
         }
@@ -117,7 +117,7 @@ impl<ExecC, QueryC>
         WasmKeeper<ExecC, QueryC>,
         StakeKeeper,
         DistributionKeeper,
-        IbcFailingModule,
+        IbcSimpleModule,
         GovFailingModule,
         StargateFailing,
     >
@@ -137,7 +137,7 @@ where
             custom: FailingModule::new(),
             staking: StakeKeeper::new(),
             distribution: DistributionKeeper::new(),
-            ibc: IbcFailingModule::new(),
+            ibc: IbcSimpleModule,
             gov: GovFailingModule::new(),
             stargate: StargateFailing,
         }

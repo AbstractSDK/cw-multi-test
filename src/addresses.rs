@@ -45,7 +45,7 @@ pub trait AddressGenerator {
     ///
     /// ```
     /// # use cosmwasm_std::testing::{MockApi, MockStorage};
-    /// # use cw_multi_test::{AddressGenerator, SimpleAddressGenerator};
+    /// # use  abstract_cw_multi_test::{AddressGenerator, SimpleAddressGenerator};
     /// # let api = MockApi::default();
     /// # let mut storage = MockStorage::default();
     /// struct MyAddressGenerator;
@@ -88,7 +88,7 @@ pub trait AddressGenerator {
     /// ```
     /// # use cosmwasm_std::Api;
     /// # use cosmwasm_std::testing::{MockApi, MockStorage};
-    /// # use cw_multi_test::{AddressGenerator, SimpleAddressGenerator};
+    /// # use abstract_cw_multi_test::{AddressGenerator, SimpleAddressGenerator};
     /// # let api = MockApi::default();
     /// # let mut storage = MockStorage::default();
     /// # let creator = api.addr_canonicalize("creator").unwrap();
@@ -112,16 +112,17 @@ pub trait AddressGenerator {
     /// ```
     fn predictable_contract_address(
         &self,
-        _api: &dyn Api,
+        api: &dyn Api,
         _storage: &mut dyn Storage,
         _code_id: u64,
         _instance_id: u64,
         _checksum: &[u8],
-        _creator: &CanonicalAddr,
+        creator: &CanonicalAddr,
         salt: &[u8],
     ) -> AnyResult<Addr> {
         Ok(Addr::unchecked(format!(
-            "contract{}",
+            "contract/{}/{}",
+            api.addr_humanize(creator)?,
             HexBinary::from(salt).to_hex()
         )))
     }
