@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     ibc::{
         types::{Connection, MockIbcQuery},
-        IbcPacketRelayingMsg,
+        IbcPacketRelayingMsg, IbcSimpleModule,
     },
     App, AppResponse, Bank, Distribution, Gov, Ibc, Module, Staking, Wasm,
 };
@@ -30,7 +30,6 @@ pub fn create_connection<
     WasmT1,
     StakingT1,
     DistrT1,
-    IbcT1,
     GovT1,
     BankT2,
     ApiT2,
@@ -39,11 +38,30 @@ pub fn create_connection<
     WasmT2,
     StakingT2,
     DistrT2,
-    IbcT2,
     GovT2,
 >(
-    src_app: &mut App<BankT1, ApiT1, StorageT1, CustomT1, WasmT1, StakingT1, DistrT1, IbcT1, GovT1>,
-    dst_app: &mut App<BankT2, ApiT2, StorageT2, CustomT2, WasmT2, StakingT2, DistrT2, IbcT2, GovT2>,
+    src_app: &mut App<
+        BankT1,
+        ApiT1,
+        StorageT1,
+        CustomT1,
+        WasmT1,
+        StakingT1,
+        DistrT1,
+        IbcSimpleModule,
+        GovT1,
+    >,
+    dst_app: &mut App<
+        BankT2,
+        ApiT2,
+        StorageT2,
+        CustomT2,
+        WasmT2,
+        StakingT2,
+        DistrT2,
+        IbcSimpleModule,
+        GovT2,
+    >,
 ) -> AnyResult<(String, String)>
 where
     CustomT1::ExecT: CustomMsg + DeserializeOwned + 'static,
@@ -55,7 +73,6 @@ where
     CustomT1: Module,
     StakingT1: Staking,
     DistrT1: Distribution,
-    IbcT1: Ibc,
     GovT1: Gov,
 
     CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
@@ -67,7 +84,6 @@ where
     CustomT2: Module,
     StakingT2: Staking,
     DistrT2: Distribution,
-    IbcT2: Ibc,
     GovT2: Gov,
 {
     let src_connection_msg = IbcPacketRelayingMsg::CreateConnection {
@@ -75,7 +91,8 @@ where
         connection_id: None,
         counterparty_connection_id: None,
     };
-    let src_create_response = src_app.sudo(crate::SudoMsg::Ibc(src_connection_msg))?;
+    let src_create_response = src_app.relay(src_connection_msg)?;
+
     let src_connection =
         get_event_attr_value(&src_create_response, "connection_open", "connection_id")?;
 
@@ -84,7 +101,7 @@ where
         connection_id: None,
         counterparty_connection_id: Some(src_connection.clone()),
     };
-    let dst_create_response = dst_app.sudo(crate::SudoMsg::Ibc(dst_connection_msg))?;
+    let dst_create_response = dst_app.relay(dst_connection_msg)?;
     let dst_connection =
         get_event_attr_value(&dst_create_response, "connection_open", "connection_id")?;
 
@@ -93,7 +110,7 @@ where
         connection_id: Some(src_connection.clone()),
         counterparty_connection_id: Some(dst_connection.clone()),
     };
-    src_app.sudo(crate::SudoMsg::Ibc(src_connection_msg))?;
+    src_app.relay(src_connection_msg)?;
 
     Ok((src_connection, dst_connection))
 }
@@ -105,7 +122,6 @@ pub fn create_channel<
     WasmT1,
     StakingT1,
     DistrT1,
-    IbcT1,
     GovT1,
     BankT2,
     ApiT2,
@@ -114,11 +130,30 @@ pub fn create_channel<
     WasmT2,
     StakingT2,
     DistrT2,
-    IbcT2,
     GovT2,
 >(
-    src_app: &mut App<BankT1, ApiT1, StorageT1, CustomT1, WasmT1, StakingT1, DistrT1, IbcT1, GovT1>,
-    dst_app: &mut App<BankT2, ApiT2, StorageT2, CustomT2, WasmT2, StakingT2, DistrT2, IbcT2, GovT2>,
+    src_app: &mut App<
+        BankT1,
+        ApiT1,
+        StorageT1,
+        CustomT1,
+        WasmT1,
+        StakingT1,
+        DistrT1,
+        IbcSimpleModule,
+        GovT1,
+    >,
+    dst_app: &mut App<
+        BankT2,
+        ApiT2,
+        StorageT2,
+        CustomT2,
+        WasmT2,
+        StakingT2,
+        DistrT2,
+        IbcSimpleModule,
+        GovT2,
+    >,
     src_connection_id: String,
     src_port: String,
     dst_port: String,
@@ -135,7 +170,6 @@ where
     CustomT1: Module,
     StakingT1: Staking,
     DistrT1: Distribution,
-    IbcT1: Ibc,
     GovT1: Gov,
 
     CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
@@ -147,7 +181,6 @@ where
     CustomT2: Module,
     StakingT2: Staking,
     DistrT2: Distribution,
-    IbcT2: Ibc,
     GovT2: Gov,
 {
     let ibc_init_msg = IbcPacketRelayingMsg::OpenChannel {
@@ -162,7 +195,7 @@ where
         },
     };
 
-    let init_response = src_app.sudo(crate::SudoMsg::Ibc(ibc_init_msg))?;
+    let init_response = src_app.relay(ibc_init_msg)?;
 
     log::debug!("Channel init {:?}", init_response);
 
@@ -187,7 +220,7 @@ where
         },
     };
 
-    let try_response: crate::AppResponse = dst_app.sudo(crate::SudoMsg::Ibc(ibc_try_msg))?;
+    let try_response: crate::AppResponse = dst_app.relay(ibc_try_msg)?;
     log::debug!("Channel try {:?}", try_response);
 
     // Get the returned version
@@ -205,7 +238,7 @@ where
         },
     };
 
-    let ack_response: crate::AppResponse = src_app.sudo(crate::SudoMsg::Ibc(ibc_ack_msg))?;
+    let ack_response: crate::AppResponse = src_app.relay(ibc_ack_msg)?;
     log::debug!("Channel ack {:?}", ack_response);
 
     let ibc_ack_msg = IbcPacketRelayingMsg::ConnectChannel {
@@ -218,7 +251,7 @@ where
         },
     };
 
-    let confirm_response: crate::AppResponse = dst_app.sudo(crate::SudoMsg::Ibc(ibc_ack_msg))?;
+    let confirm_response: crate::AppResponse = dst_app.relay(ibc_ack_msg)?;
     log::debug!("Channel confirm {:?}", confirm_response);
 
     Ok(ChannelCreationResult {

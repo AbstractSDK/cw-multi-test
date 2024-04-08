@@ -1,10 +1,10 @@
 use anyhow::{anyhow, bail};
 use cosmwasm_std::{
-    ensure_eq, to_json_binary, Addr, BankMsg, Binary, ChannelResponse, Coin, CustomMsg, Event,
-    IbcAcknowledgement, IbcChannel, IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg,
-    IbcEndpoint, IbcMsg, IbcOrder, IbcPacket, IbcPacketAckMsg, IbcPacketReceiveMsg,
-    IbcPacketTimeoutMsg, IbcQuery, IbcTimeout, IbcTimeoutBlock, ListChannelsResponse, Order,
-    Storage,
+    ensure_eq, to_json_binary, Addr, BankMsg, Binary, ChannelResponse, Coin, CustomMsg, Empty,
+    Event, IbcAcknowledgement, IbcChannel, IbcChannelCloseMsg, IbcChannelConnectMsg,
+    IbcChannelOpenMsg, IbcEndpoint, IbcMsg, IbcOrder, IbcPacket, IbcPacketAckMsg,
+    IbcPacketReceiveMsg, IbcPacketTimeoutMsg, IbcQuery, IbcTimeout, IbcTimeoutBlock,
+    ListChannelsResponse, Order, Storage,
 };
 use cw20_ics20::ibc::Ics20Packet;
 
@@ -14,7 +14,7 @@ use crate::{
     ibc::types::Connection,
     prefixed_storage::{prefixed, prefixed_read},
     transactions::transactional,
-    AppResponse, Ibc, Module, SudoMsg,
+    AppResponse, CosmosRouter, Ibc, Module, SudoMsg,
 };
 use anyhow::Result as AnyResult;
 
@@ -27,6 +27,7 @@ use super::{
         RECEIVE_PACKET_EVENT, SEND_PACKET_EVENT, TIMEOUT_PACKET_EVENT,
         TIMEOUT_RECEIVE_PACKET_EVENT, WRITE_ACK_EVENT,
     },
+    router::CosmosIbcRouter,
     state::{
         ibc_connections, load_port_info, ACK_PACKET_MAP, CHANNEL_HANDSHAKE_INFO, CHANNEL_INFO,
         NAMESPACE_IBC, PORT_INFO, RECEIVE_PACKET_MAP, SEND_PACKET_MAP, TIMEOUT_PACKET_MAP,
@@ -118,7 +119,7 @@ impl IbcSimpleModule {
         &self,
         api: &dyn cosmwasm_std::Api,
         storage: &mut dyn Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        router: &dyn CosmosIbcRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
         local_connection_id: String,
         local_port: String,
@@ -246,7 +247,7 @@ impl IbcSimpleModule {
         &self,
         api: &dyn cosmwasm_std::Api,
         storage: &mut dyn Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        router: &dyn CosmosIbcRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
         port_id: String,
         channel_id: String,
@@ -371,7 +372,7 @@ impl IbcSimpleModule {
         &self,
         api: &dyn cosmwasm_std::Api,
         storage: &mut dyn Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        router: &dyn CosmosIbcRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
         port_id: String,
         channel_id: String,
@@ -530,7 +531,7 @@ impl IbcSimpleModule {
         &self,
         api: &dyn cosmwasm_std::Api,
         storage: &mut dyn Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        router: &dyn CosmosIbcRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
         packet: IbcPacketData,
     ) -> AnyResult<crate::AppResponse>
@@ -596,15 +597,16 @@ impl IbcSimpleModule {
             let res = if channel_info.info.order == IbcOrder::Ordered {
                 // We send a close channel response
                 transactional(storage, |write_cache, _| {
-                    router.sudo(
+                    self.relay(
                         api,
                         write_cache,
+                        router,
                         block,
-                        SudoMsg::Ibc(IbcPacketRelayingMsg::CloseChannel {
+                        IbcPacketRelayingMsg::CloseChannel {
                             port_id: packet.dst_port_id.clone(),
                             channel_id: packet.dst_channel_id.clone(),
                             init: true,
-                        }),
+                        },
                     )
                 })?
             } else {
@@ -755,7 +757,7 @@ impl IbcSimpleModule {
         &self,
         api: &dyn cosmwasm_std::Api,
         storage: &mut dyn Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        router: &dyn CosmosIbcRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
         packet: IbcPacketData,
         ack: Binary,
@@ -872,7 +874,7 @@ impl IbcSimpleModule {
         &self,
         api: &dyn cosmwasm_std::Api,
         storage: &mut dyn Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        router: &dyn CosmosIbcRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
         packet: IbcPacketData,
     ) -> AnyResult<crate::AppResponse>
@@ -991,7 +993,7 @@ impl IbcSimpleModule {
         &self,
         api: &dyn cosmwasm_std::Api,
         storage: &mut dyn cosmwasm_std::Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
         sender: Addr,
         channel_id: String,
@@ -1037,7 +1039,7 @@ impl IbcSimpleModule {
 impl Module for IbcSimpleModule {
     type ExecT = IbcMsg;
     type QueryT = MockIbcQuery;
-    type SudoT = IbcPacketRelayingMsg;
+    type SudoT = Empty;
 
     fn execute<ExecC, QueryC>(
         &self,
@@ -1072,96 +1074,13 @@ impl Module for IbcSimpleModule {
                 self.send_packet(storage, port_id, channel_id, data, timeout)
             }
             IbcMsg::CloseChannel { channel_id } => {
+                // TODO, can't close channel because objects don't have the right channels
                 let port_id: String = format!("wasm.{}", sender);
                 // This message correspond to init closing a channel
                 self.close_channel(api, storage, router, block, port_id, channel_id, true)
             }
             _ => bail!("Not implemented on the ibc module"),
         }
-    }
-
-    fn sudo<ExecC, QueryC>(
-        &self,
-        api: &dyn cosmwasm_std::Api,
-        storage: &mut dyn cosmwasm_std::Storage,
-        router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
-        block: &cosmwasm_std::BlockInfo,
-        msg: Self::SudoT,
-    ) -> anyhow::Result<crate::AppResponse>
-    where
-        ExecC: CustomMsg,
-        QueryC: cosmwasm_std::CustomQuery + serde::de::DeserializeOwned + 'static,
-    {
-        let response = match msg {
-            IbcPacketRelayingMsg::CreateConnection {
-                connection_id,
-                remote_chain_id,
-                counterparty_connection_id,
-            } => self.create_connection(
-                storage,
-                remote_chain_id,
-                connection_id,
-                counterparty_connection_id,
-            ),
-
-            IbcPacketRelayingMsg::OpenChannel {
-                local_connection_id,
-                local_port,
-                version,
-                order,
-                counterparty_version,
-                counterparty_endpoint,
-            } => self.open_channel(
-                api,
-                storage,
-                router,
-                block,
-                local_connection_id,
-                local_port,
-                version,
-                order,
-                counterparty_endpoint,
-                counterparty_version,
-            ),
-            IbcPacketRelayingMsg::ConnectChannel {
-                counterparty_version,
-                counterparty_endpoint,
-                port_id,
-                channel_id,
-            } => self.connect_channel(
-                api,
-                storage,
-                router,
-                block,
-                port_id,
-                channel_id,
-                counterparty_endpoint,
-                counterparty_version,
-            ),
-            IbcPacketRelayingMsg::CloseChannel {
-                port_id,
-                channel_id,
-                init,
-            } => self.close_channel(api, storage, router, block, port_id, channel_id, init),
-
-            IbcPacketRelayingMsg::Send {
-                port_id,
-                channel_id,
-                data,
-                timeout,
-            } => self.send_packet(storage, port_id, channel_id, data, timeout),
-            IbcPacketRelayingMsg::Receive { packet } => {
-                self.receive_packet(api, storage, router, block, packet)
-            }
-            IbcPacketRelayingMsg::Acknowledge { packet, ack } => {
-                self.acknowledge_packet(api, storage, router, block, packet, ack)
-            }
-            IbcPacketRelayingMsg::Timeout { packet } => {
-                self.timeout_packet(api, storage, router, block, packet)
-            }
-        }?;
-
-        Ok(response)
     }
 
     fn query(
@@ -1242,7 +1161,108 @@ impl Module for IbcSimpleModule {
         }
     }
 
+    fn sudo<ExecC, QueryC>(
+        &self,
+        api: &dyn cosmwasm_std::Api,
+        storage: &mut dyn Storage,
+        router: &dyn CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &cosmwasm_std::BlockInfo,
+        msg: Self::SudoT,
+    ) -> AnyResult<AppResponse>
+    where
+        ExecC: CustomMsg + serde::de::DeserializeOwned + 'static,
+        QueryC: cosmwasm_std::CustomQuery + serde::de::DeserializeOwned + 'static,
+    {
+        Ok(AppResponse::default())
+    }
+
     //Ibc endpoints are not available on the IBC module. This module is only a fix for receiving IBC messages. The IBC module doesn't and will never have ports opened to other blockchains
+}
+
+impl IbcSimpleModule {
+    pub fn relay<ExecC, QueryC>(
+        &self,
+        api: &dyn cosmwasm_std::Api,
+        storage: &mut dyn cosmwasm_std::Storage,
+        router: &dyn CosmosIbcRouter<ExecC = ExecC, QueryC = QueryC>,
+        block: &cosmwasm_std::BlockInfo,
+        msg: IbcPacketRelayingMsg,
+    ) -> anyhow::Result<crate::AppResponse>
+    where
+        ExecC: CustomMsg,
+        QueryC: cosmwasm_std::CustomQuery + serde::de::DeserializeOwned + 'static,
+    {
+        let response = match msg {
+            IbcPacketRelayingMsg::CreateConnection {
+                connection_id,
+                remote_chain_id,
+                counterparty_connection_id,
+            } => self.create_connection(
+                storage,
+                remote_chain_id,
+                connection_id,
+                counterparty_connection_id,
+            ),
+
+            IbcPacketRelayingMsg::OpenChannel {
+                local_connection_id,
+                local_port,
+                version,
+                order,
+                counterparty_version,
+                counterparty_endpoint,
+            } => self.open_channel(
+                api,
+                storage,
+                router,
+                block,
+                local_connection_id,
+                local_port,
+                version,
+                order,
+                counterparty_endpoint,
+                counterparty_version,
+            ),
+            IbcPacketRelayingMsg::ConnectChannel {
+                counterparty_version,
+                counterparty_endpoint,
+                port_id,
+                channel_id,
+            } => self.connect_channel(
+                api,
+                storage,
+                router,
+                block,
+                port_id,
+                channel_id,
+                counterparty_endpoint,
+                counterparty_version,
+            ),
+            IbcPacketRelayingMsg::CloseChannel {
+                port_id,
+                channel_id,
+                init,
+            } => self.close_channel(api, storage, router, block, port_id, channel_id, init),
+
+            IbcPacketRelayingMsg::Send {
+                port_id,
+                channel_id,
+                data,
+                timeout,
+            } => self.send_packet(storage, port_id, channel_id, data, timeout),
+            IbcPacketRelayingMsg::Receive { packet } => {
+                self.receive_packet(api, storage, router, block, packet)
+            }
+            IbcPacketRelayingMsg::Acknowledge { packet, ack } => {
+                self.acknowledge_packet(api, storage, router, block, packet, ack)
+            }
+            IbcPacketRelayingMsg::Timeout { packet } => {
+                self.timeout_packet(api, storage, router, block, packet)
+            }
+        }?;
+
+        Ok(response)
+    }
 }
 
 impl Ibc for IbcSimpleModule {}

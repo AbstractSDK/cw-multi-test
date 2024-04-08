@@ -1,7 +1,7 @@
 //! Ibc Module adds IBC support to cw-multi-test
 #![allow(missing_docs)]
 use cosmwasm_std::{
-    IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcMsg, IbcPacketAckMsg,
+    Empty, IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcMsg, IbcPacketAckMsg,
     IbcPacketReceiveMsg, IbcPacketTimeoutMsg,
 };
 
@@ -9,6 +9,7 @@ use crate::{AcceptingModule, FailingModule, Module};
 
 pub mod events;
 pub mod relayer;
+pub mod router;
 mod simple_ibc;
 mod state;
 pub mod types;
@@ -40,17 +41,17 @@ pub enum IbcModuleMsg {
 ///Manages Inter-Blockchain Communication (IBC) functionalities.
 ///This trait is critical for testing contracts that involve cross-chain interactions,
 ///reflecting the interconnected nature of the Cosmos ecosystem.
-pub trait Ibc: Module<ExecT = IbcMsg, QueryT = MockIbcQuery, SudoT = IbcPacketRelayingMsg> {}
+pub trait Ibc: Module<ExecT = IbcMsg, QueryT = MockIbcQuery, SudoT = Empty> {}
 /// Ideal for testing contracts that involve IBC, this module is designed to successfully
 /// handle cross-chain messages. It's key for ensuring that your contract can smoothly interact
 /// with other blockchains in the Cosmos network.
-pub type IbcAcceptingModule = AcceptingModule<IbcMsg, MockIbcQuery, IbcPacketRelayingMsg>;
+pub type IbcAcceptingModule = AcceptingModule<IbcMsg, MockIbcQuery, Empty>;
 
 impl Ibc for IbcAcceptingModule {}
 /// Use this to test how your contract deals with problematic IBC scenarios.
 /// It's a module that deliberately fails in handling IBC messages, allowing you
 /// to check how your contract behaves in less-than-ideal cross-chain communication situations.
-pub type IbcFailingModule = FailingModule<IbcMsg, MockIbcQuery, IbcPacketRelayingMsg>;
+pub type IbcFailingModule = FailingModule<IbcMsg, MockIbcQuery, Empty>;
 
 impl Ibc for IbcFailingModule {}
 

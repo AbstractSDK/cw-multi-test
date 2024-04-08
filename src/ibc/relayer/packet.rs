@@ -9,7 +9,7 @@ use crate::{
             WRITE_ACK_EVENT,
         },
         types::{IbcPacketData, MockIbcQuery},
-        IbcPacketRelayingMsg,
+        IbcPacketRelayingMsg, IbcSimpleModule,
     },
     App, AppResponse, Bank, Distribution, Gov, Ibc, Module, Staking, SudoMsg, Wasm,
 };
@@ -42,7 +42,6 @@ pub fn relay_packets_in_tx<
     WasmT1,
     StakingT1,
     DistrT1,
-    IbcT1,
     GovT1,
     BankT2,
     ApiT2,
@@ -51,11 +50,30 @@ pub fn relay_packets_in_tx<
     WasmT2,
     StakingT2,
     DistrT2,
-    IbcT2,
     GovT2,
 >(
-    app1: &mut App<BankT1, ApiT1, StorageT1, CustomT1, WasmT1, StakingT1, DistrT1, IbcT1, GovT1>,
-    app2: &mut App<BankT2, ApiT2, StorageT2, CustomT2, WasmT2, StakingT2, DistrT2, IbcT2, GovT2>,
+    app1: &mut App<
+        BankT1,
+        ApiT1,
+        StorageT1,
+        CustomT1,
+        WasmT1,
+        StakingT1,
+        DistrT1,
+        IbcSimpleModule,
+        GovT1,
+    >,
+    app2: &mut App<
+        BankT2,
+        ApiT2,
+        StorageT2,
+        CustomT2,
+        WasmT2,
+        StakingT2,
+        DistrT2,
+        IbcSimpleModule,
+        GovT2,
+    >,
     app1_tx_response: AppResponse,
 ) -> AnyResult<Vec<RelayPacketResult>>
 where
@@ -68,7 +86,6 @@ where
     CustomT1: Module,
     StakingT1: Staking,
     DistrT1: Distribution,
-    IbcT1: Ibc,
     GovT1: Gov,
 
     CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
@@ -80,7 +97,6 @@ where
     CustomT2: Module,
     StakingT2: Staking,
     DistrT2: Distribution,
-    IbcT2: Ibc,
     GovT2: Gov,
 {
     // Find all packets and their data
@@ -117,7 +133,6 @@ pub fn relay_packet<
     WasmT1,
     StakingT1,
     DistrT1,
-    IbcT1,
     GovT1,
     BankT2,
     ApiT2,
@@ -126,11 +141,30 @@ pub fn relay_packet<
     WasmT2,
     StakingT2,
     DistrT2,
-    IbcT2,
     GovT2,
 >(
-    app1: &mut App<BankT1, ApiT1, StorageT1, CustomT1, WasmT1, StakingT1, DistrT1, IbcT1, GovT1>,
-    app2: &mut App<BankT2, ApiT2, StorageT2, CustomT2, WasmT2, StakingT2, DistrT2, IbcT2, GovT2>,
+    app1: &mut App<
+        BankT1,
+        ApiT1,
+        StorageT1,
+        CustomT1,
+        WasmT1,
+        StakingT1,
+        DistrT1,
+        IbcSimpleModule,
+        GovT1,
+    >,
+    app2: &mut App<
+        BankT2,
+        ApiT2,
+        StorageT2,
+        CustomT2,
+        WasmT2,
+        StakingT2,
+        DistrT2,
+        IbcSimpleModule,
+        GovT2,
+    >,
     src_port_id: String,
     src_channel_id: String,
     sequence: u64,
@@ -145,7 +179,6 @@ where
     CustomT1: Module,
     StakingT1: Staking,
     DistrT1: Distribution,
-    IbcT1: Ibc,
     GovT1: Gov,
 
     CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
@@ -157,7 +190,6 @@ where
     CustomT2: Module,
     StakingT2: Staking,
     DistrT2: Distribution,
-    IbcT2: Ibc,
     GovT2: Gov,
 {
     let packet: IbcPacketData = from_json(app1.ibc_query(MockIbcQuery::SendPacket {
@@ -167,23 +199,23 @@ where
     })?)?;
 
     // First we start by sending the packet on chain 2
-    let receive_response = app2.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::Receive {
+    let receive_response = app2.relay(IbcPacketRelayingMsg::Receive {
         packet: packet.clone(),
-    }))?;
+    })?;
 
     // We start by verifying that we have an acknowledgment and not a timeout
     if has_event(&receive_response, TIMEOUT_RECEIVE_PACKET_EVENT) {
         // If there was a timeout, we timeout the packet on the sending chain
         // TODO: We don't handle the chain closure in here for now in case of ordered channels
-        let timeout_response = app1.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::Timeout { packet }))?;
+        let timeout_response = app1.relay(IbcPacketRelayingMsg::Timeout { packet })?;
 
         // We close the channel on the sending chain if it's request by the receiving chain
         let close_confirm_response = if has_event(&receive_response, CHANNEL_CLOSE_INIT_EVENT) {
-            Some(app1.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::CloseChannel {
+            Some(app1.relay(IbcPacketRelayingMsg::CloseChannel {
                 port_id: src_port_id,
                 channel_id: src_channel_id,
                 init: false,
-            }))?)
+            })?)
         } else {
             None
         };
@@ -202,10 +234,10 @@ where
 
     let ack = Binary::from(hex::decode(hex_ack)?);
 
-    let ack_response = app1.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::Acknowledge {
+    let ack_response = app1.relay(IbcPacketRelayingMsg::Acknowledge {
         packet,
         ack: ack.clone(),
-    }))?;
+    })?;
 
     Ok(RelayPacketResult {
         receive_tx: receive_response,

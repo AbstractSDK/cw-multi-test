@@ -3,9 +3,7 @@ use crate::contracts::Contract;
 use crate::error::{bail, AnyResult};
 use crate::executor::{AppResponse, Executor};
 use crate::gov::Gov;
-use crate::ibc::{
-    types::IbcResponse, types::MockIbcQuery, IbcModuleMsg, IbcPacketRelayingMsg as IbcSudo,
-};
+use crate::ibc::{types::MockIbcQuery, IbcModuleMsg, IbcPacketRelayingMsg as IbcSudo};
 use crate::ibc::{Ibc, IbcSimpleModule};
 use crate::module::{FailingModule, Module};
 use crate::staking::{Distribution, DistributionKeeper, StakeKeeper, Staking, StakingSudo};
@@ -542,8 +540,6 @@ pub enum SudoMsg {
     Staking(StakingSudo),
     /// Wasm privileged actions.
     Wasm(WasmSudo),
-    /// Ibc actions, used namely to create channels and relay packets
-    Ibc(IbcSudo),
 }
 
 impl From<WasmSudo> for SudoMsg {
@@ -615,15 +611,6 @@ pub trait CosmosRouter {
         block: &BlockInfo,
         msg: SudoMsg,
     ) -> AnyResult<AppResponse>;
-
-    /// Evaluates all ibc related actions
-    fn ibc(
-        &self,
-        api: &dyn Api,
-        storage: &mut dyn Storage,
-        block: &BlockInfo,
-        msg: IbcRouterMsg,
-    ) -> AnyResult<IbcResponse>;
 }
 
 impl<BankT, CustomT, WasmT, StakingT, DistrT, IbcT, GovT, StargateT> CosmosRouter
@@ -710,96 +697,6 @@ where
             SudoMsg::Bank(msg) => self.bank.sudo(api, storage, self, block, msg),
             SudoMsg::Staking(msg) => self.staking.sudo(api, storage, self, block, msg),
             SudoMsg::Custom(_) => unimplemented!(),
-            SudoMsg::Ibc(msg) => self.ibc.sudo(api, storage, self, block, msg),
-        }
-    }
-
-    fn ibc(
-        &self,
-        api: &dyn Api,
-        storage: &mut dyn Storage,
-        block: &BlockInfo,
-        msg: IbcRouterMsg,
-    ) -> AnyResult<IbcResponse> {
-        match msg.module {
-            IbcModule::Bank => match msg.msg {
-                IbcModuleMsg::ChannelOpen(m) => self
-                    .bank
-                    .ibc_channel_open(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::ChannelConnect(m) => self
-                    .bank
-                    .ibc_channel_connect(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::ChannelClose(m) => self
-                    .bank
-                    .ibc_channel_close(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketReceive(m) => self
-                    .bank
-                    .ibc_packet_receive(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketAcknowledgement(m) => self
-                    .bank
-                    .ibc_packet_acknowledge(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketTimeout(m) => self
-                    .bank
-                    .ibc_packet_timeout(api, storage, self, block, m)
-                    .map(Into::into),
-            },
-            IbcModule::Staking => match msg.msg {
-                IbcModuleMsg::ChannelOpen(m) => self
-                    .staking
-                    .ibc_channel_open(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::ChannelConnect(m) => self
-                    .staking
-                    .ibc_channel_connect(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::ChannelClose(m) => self
-                    .staking
-                    .ibc_channel_close(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketReceive(m) => self
-                    .staking
-                    .ibc_packet_receive(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketAcknowledgement(m) => self
-                    .staking
-                    .ibc_packet_acknowledge(api, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketTimeout(m) => self
-                    .staking
-                    .ibc_packet_timeout(api, storage, self, block, m)
-                    .map(Into::into),
-            },
-            IbcModule::Wasm(contract_addr) => match msg.msg {
-                IbcModuleMsg::ChannelOpen(m) => self
-                    .wasm
-                    .ibc_channel_open(api, contract_addr, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::ChannelConnect(m) => self
-                    .wasm
-                    .ibc_channel_connect(api, contract_addr, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::ChannelClose(m) => self
-                    .wasm
-                    .ibc_channel_close(api, contract_addr, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketReceive(m) => self
-                    .wasm
-                    .ibc_packet_receive(api, contract_addr, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketAcknowledgement(m) => self
-                    .wasm
-                    .ibc_packet_acknowledge(api, contract_addr, storage, self, block, m)
-                    .map(Into::into),
-                IbcModuleMsg::PacketTimeout(m) => self
-                    .wasm
-                    .ibc_packet_timeout(api, contract_addr, storage, self, block, m)
-                    .map(Into::into),
-            },
         }
     }
 }
@@ -858,16 +755,6 @@ where
         _msg: SudoMsg,
     ) -> AnyResult<AppResponse> {
         panic!("Cannot sudo MockRouters");
-    }
-
-    fn ibc(
-        &self,
-        _api: &dyn Api,
-        _storage: &mut dyn Storage,
-        _block: &BlockInfo,
-        _msg: IbcRouterMsg,
-    ) -> AnyResult<IbcResponse> {
-        panic!("Cannot ibc MockRouters");
     }
 }
 
