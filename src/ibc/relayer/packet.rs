@@ -8,20 +8,23 @@ use crate::{
             CHANNEL_CLOSE_INIT_EVENT, SEND_PACKET_EVENT, TIMEOUT_RECEIVE_PACKET_EVENT,
             WRITE_ACK_EVENT,
         },
+        module::{IbcModule, IbcWasm},
         types::{IbcPacketData, MockIbcQuery},
         IbcPacketRelayingMsg, IbcSimpleModule,
     },
-    App, AppResponse, Bank, Distribution, Gov, Ibc, Module, Staking, SudoMsg, Wasm,
+    App, AppResponse, Bank, Distribution, Gov, Module, Staking, Wasm,
 };
 
 use super::{get_all_event_attr_value, get_event_attr_value, has_event};
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub struct RelayPacketResult {
     pub receive_tx: AppResponse,
     pub result: RelayingResult,
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum RelayingResult {
     Timeout {
@@ -34,6 +37,7 @@ pub enum RelayingResult {
     },
 }
 
+/// relayes a packets between 2 chains
 pub fn relay_packets_in_tx<
     BankT1,
     ApiT1,
@@ -79,23 +83,23 @@ pub fn relay_packets_in_tx<
 where
     CustomT1::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT1::QueryT: CustomQuery + DeserializeOwned + 'static,
-    WasmT1: Wasm<CustomT1::ExecT, CustomT1::QueryT>,
-    BankT1: Bank,
+    WasmT1: Wasm<CustomT1::ExecT, CustomT1::QueryT> + IbcWasm<CustomT1::ExecT, CustomT1::QueryT>,
+    BankT1: Bank + IbcModule,
     ApiT1: Api,
     StorageT1: Storage,
     CustomT1: Module,
-    StakingT1: Staking,
+    StakingT1: Staking + IbcModule,
     DistrT1: Distribution,
     GovT1: Gov,
 
     CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT2::QueryT: CustomQuery + DeserializeOwned + 'static,
-    WasmT2: Wasm<CustomT2::ExecT, CustomT2::QueryT>,
-    BankT2: Bank,
+    WasmT2: Wasm<CustomT2::ExecT, CustomT2::QueryT> + IbcWasm<CustomT2::ExecT, CustomT2::QueryT>,
+    BankT2: Bank + IbcModule,
     ApiT2: Api,
     StorageT2: Storage,
     CustomT2: Module,
-    StakingT2: Staking,
+    StakingT2: Staking + IbcModule,
     DistrT2: Distribution,
     GovT2: Gov,
 {
@@ -172,23 +176,23 @@ pub fn relay_packet<
 where
     CustomT1::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT1::QueryT: CustomQuery + DeserializeOwned + 'static,
-    WasmT1: Wasm<CustomT1::ExecT, CustomT1::QueryT>,
-    BankT1: Bank,
+    WasmT1: Wasm<CustomT1::ExecT, CustomT1::QueryT> + IbcWasm<CustomT1::ExecT, CustomT1::QueryT>,
+    BankT1: Bank + IbcModule,
     ApiT1: Api,
     StorageT1: Storage,
     CustomT1: Module,
-    StakingT1: Staking,
+    StakingT1: Staking + IbcModule,
     DistrT1: Distribution,
     GovT1: Gov,
 
     CustomT2::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT2::QueryT: CustomQuery + DeserializeOwned + 'static,
-    WasmT2: Wasm<CustomT2::ExecT, CustomT2::QueryT>,
-    BankT2: Bank,
+    WasmT2: Wasm<CustomT2::ExecT, CustomT2::QueryT> + IbcWasm<CustomT2::ExecT, CustomT2::QueryT>,
+    BankT2: Bank + IbcModule,
     ApiT2: Api,
     StorageT2: Storage,
     CustomT2: Module,
-    StakingT2: Staking,
+    StakingT2: Staking + IbcModule,
     DistrT2: Distribution,
     GovT2: Gov,
 {

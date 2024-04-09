@@ -4,8 +4,8 @@ use cosmwasm_std::{
 };
 
 use crate::{
-    bank::IBC_LOCK_MODULE_ADDRESS,
     ibc::{
+        module::IBC_LOCK_MODULE_ADDRESS,
         relayer::{create_channel, create_connection, relay_packets_in_tx, ChannelCreationResult},
         simple_ibc::IbcSimpleModule,
     },

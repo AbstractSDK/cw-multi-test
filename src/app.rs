@@ -3,14 +3,13 @@ use crate::contracts::Contract;
 use crate::error::{bail, AnyResult};
 use crate::executor::{AppResponse, Executor};
 use crate::gov::Gov;
-use crate::ibc::{types::MockIbcQuery, IbcModuleMsg, IbcPacketRelayingMsg as IbcSudo};
-use crate::ibc::{Ibc, IbcSimpleModule};
+use crate::ibc::Ibc;
 use crate::module::{FailingModule, Module};
 use crate::staking::{Distribution, DistributionKeeper, StakeKeeper, Staking, StakingSudo};
 use crate::stargate::{Stargate, StargateFailingModule, StargateMsg, StargateQuery};
 use crate::transactions::transactional;
 use crate::wasm::{ContractData, Wasm, WasmKeeper, WasmSudo};
-use crate::{AppBuilder, GovFailingModule};
+use crate::{AppBuilder, GovFailingModule, IbcFailingModule};
 use cosmwasm_std::testing::{MockApi, MockStorage};
 use cosmwasm_std::{
     from_json, to_json_binary, Addr, Api, Binary, BlockInfo, ContractResult, CosmosMsg, CustomMsg,
@@ -38,7 +37,7 @@ pub type BasicApp<ExecC = Empty, QueryC = Empty> = App<
     WasmKeeper<ExecC, QueryC>,
     StakeKeeper,
     DistributionKeeper,
-    IbcSimpleModule,
+    IbcFailingModule,
     GovFailingModule,
     StargateFailingModule,
 >;
@@ -55,14 +54,18 @@ pub struct App<
     Wasm = WasmKeeper<Empty, Empty>,
     Staking = StakeKeeper,
     Distr = DistributionKeeper,
-    Ibc = IbcSimpleModule,
+    Ibc = IbcFailingModule,
     Gov = GovFailingModule,
     Stargate = StargateFailingModule,
 > {
-    pub(crate) router: Router<Bank, Custom, Wasm, Staking, Distr, Ibc, Gov, Stargate>,
-    pub(crate) api: Api,
-    pub(crate) storage: Storage,
-    pub(crate) block: BlockInfo,
+    /// TODO : placeholder docs
+    pub router: Router<Bank, Custom, Wasm, Staking, Distr, Ibc, Gov, Stargate>,
+    /// TODO : placeholder docs
+    pub api: Api,
+    /// TODO : placeholder docs
+    pub storage: Storage,
+    /// TODO : placeholder docs
+    pub block: BlockInfo,
 }
 
 /// No-op application initialization function.
@@ -91,7 +94,7 @@ impl BasicApp {
                 WasmKeeper<Empty, Empty>,
                 StakeKeeper,
                 DistributionKeeper,
-                IbcSimpleModule,
+                IbcFailingModule,
                 GovFailingModule,
                 StargateFailingModule,
             >,
@@ -116,7 +119,7 @@ where
             WasmKeeper<ExecC, QueryC>,
             StakeKeeper,
             DistributionKeeper,
-            IbcSimpleModule,
+            IbcFailingModule,
             GovFailingModule,
             StargateFailingModule,
         >,
@@ -444,20 +447,6 @@ where
         })
     }
 
-    /// Queries the IBC module
-    pub fn ibc_query(&self, query: MockIbcQuery) -> AnyResult<Binary> {
-        let Self {
-            block,
-            router,
-            api,
-            storage,
-        } = self;
-
-        let querier = router.querier(api, storage, block);
-
-        router.ibc.query(api, storage, &querier, block, query)
-    }
-
     /// Runs arbitrary SudoMsg.
     /// This will create a cache before the execution, so no state changes are persisted if this
     /// returns an error, but all are persisted on success.
@@ -559,20 +548,6 @@ impl From<StakingSudo> for SudoMsg {
         SudoMsg::Staking(staking)
     }
 }
-
-/// We use it to allow calling into modules from the ibc module. This is used for receiving packets
-pub struct IbcRouterMsg {
-    pub module: IbcModule,
-    pub msg: IbcModuleMsg,
-}
-
-#[cosmwasm_schema::cw_serde]
-pub enum IbcModule {
-    Wasm(Addr), // The wasm module needs to contain the wasm contract address (usually decoded from the port)
-    Bank,
-    Staking,
-}
-
 /// A trait representing the Cosmos based chain's router.
 ///
 /// This trait is designed for routing messages within the Cosmos ecosystem.
@@ -676,7 +651,7 @@ where
             QueryRequest::Bank(req) => self.bank.query(api, storage, &querier, block, req),
             QueryRequest::Custom(req) => self.custom.query(api, storage, &querier, block, req),
             QueryRequest::Staking(req) => self.staking.query(api, storage, &querier, block, req),
-            QueryRequest::Ibc(req) => self.ibc.query(api, storage, &querier, block, req.into()),
+            QueryRequest::Ibc(req) => self.ibc.query(api, storage, &querier, block, req),
             QueryRequest::Stargate { path, data } => {
                 self.stargate
                     .query(api, storage, &querier, block, StargateQuery { path, data })

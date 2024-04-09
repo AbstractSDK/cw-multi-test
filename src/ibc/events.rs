@@ -1,3 +1,6 @@
+//! Collection of event names
+
+#![allow(missing_docs)]
 pub const SEND_PACKET_EVENT: &str = "send_packet";
 pub const RECEIVE_PACKET_EVENT: &str = "recv_packet";
 pub const WRITE_ACK_EVENT: &str = "write_acknowledgement";

@@ -1,3 +1,5 @@
+//! All types used for IBC
+
 use anyhow::bail;
 use cosmwasm_std::{
     Addr, Binary, Event, IbcChannel, IbcChannelOpenResponse, IbcEndpoint, IbcOrder, IbcQuery,
@@ -5,7 +7,22 @@ use cosmwasm_std::{
 };
 use std::str::FromStr;
 
-use crate::app::IbcModule;
+use super::relayer::IbcModuleMsg;
+
+#[allow(missing_docs)]
+/// We use it to allow calling into modules from the ibc module. This is used for receiving packets
+pub struct IbcRouterMsg {
+    pub module: IbcModuleId,
+    pub msg: IbcModuleMsg,
+}
+
+#[allow(missing_docs)]
+#[cosmwasm_schema::cw_serde]
+pub enum IbcModuleId {
+    Wasm(Addr), // The wasm module needs to contain the wasm contract address (usually decoded from the port)
+    Bank,
+    Staking,
+}
 
 #[cosmwasm_schema::cw_serde]
 /// IBC connection
@@ -24,6 +41,7 @@ pub struct PortInfo {
     pub next_channel_id: u64,
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 pub struct ChannelHandshakeInfo {
     pub connection_id: String,
@@ -35,6 +53,7 @@ pub struct ChannelHandshakeInfo {
     pub version: String,
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 pub enum ChannelHandshakeState {
     Init,
@@ -43,6 +62,7 @@ pub enum ChannelHandshakeState {
     Confirm,
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 pub struct ChannelInfo {
     pub next_packet_id: u64,
@@ -53,6 +73,7 @@ pub struct ChannelInfo {
     pub open: bool,
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 pub enum MockIbcPort {
     Wasm(String), // A wasm port is simply a wasm contract address
@@ -60,16 +81,17 @@ pub enum MockIbcPort {
     Staking,      // The staking port simply talks to the staking module
 }
 
-impl From<MockIbcPort> for IbcModule {
-    fn from(port: MockIbcPort) -> IbcModule {
+impl From<MockIbcPort> for IbcModuleId {
+    fn from(port: MockIbcPort) -> IbcModuleId {
         match port {
-            MockIbcPort::Bank => IbcModule::Bank,
-            MockIbcPort::Staking => IbcModule::Staking,
-            MockIbcPort::Wasm(contract) => IbcModule::Wasm(Addr::unchecked(contract)),
+            MockIbcPort::Bank => IbcModuleId::Bank,
+            MockIbcPort::Staking => IbcModuleId::Staking,
+            MockIbcPort::Wasm(contract) => IbcModuleId::Wasm(Addr::unchecked(contract)),
         }
     }
 }
 
+#[allow(missing_docs)]
 pub const BANK_MODULE_PORT: &str = "transfer";
 
 impl ToString for MockIbcPort {
@@ -104,6 +126,7 @@ impl FromStr for MockIbcPort {
     }
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 pub struct IbcPacketData {
     pub ack: Option<Binary>,
@@ -117,6 +140,7 @@ pub struct IbcPacketData {
     pub timeout: IbcTimeout,
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 pub struct IbcPacketReceived {
     pub data: IbcPacketData,
@@ -124,11 +148,13 @@ pub struct IbcPacketReceived {
     pub timeout: bool,
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 pub struct IbcPacketAck {
     pub ack: Binary,
 }
 
+#[allow(missing_docs)]
 /// This is a custom msg that is used for executing actions on the IBC module
 /// We trust all packets that are relayed. Remember, this is a test environement
 #[cosmwasm_schema::cw_serde]
@@ -179,6 +205,7 @@ pub enum IbcPacketRelayingMsg {
     },
 }
 
+#[allow(missing_docs)]
 // This type allows to wrap the ibc response to return from the Router
 #[cosmwasm_schema::cw_serde]
 pub enum IbcResponse {
@@ -187,12 +214,14 @@ pub enum IbcResponse {
     Receive(AppIbcReceiveResponse),
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 #[derive(Default)]
 pub struct AppIbcBasicResponse {
     pub events: Vec<Event>,
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 #[derive(Default)]
 pub struct AppIbcReceiveResponse {
@@ -218,6 +247,7 @@ impl From<AppIbcReceiveResponse> for IbcResponse {
     }
 }
 
+#[allow(missing_docs)]
 #[cosmwasm_schema::cw_serde]
 // This extends the cosmwasm std IBC query type with internal tools needed
 pub enum MockIbcQuery {

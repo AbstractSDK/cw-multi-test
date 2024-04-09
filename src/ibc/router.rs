@@ -1,14 +1,18 @@
-use crate::app::{IbcRouterMsg, MockRouter};
-use crate::{app::IbcModule, Router};
+//! IBC implementation of the CosmosRouter
+
+use crate::app::MockRouter;
+use crate::Router;
 use crate::{Bank, CosmosRouter, Distribution, Gov, Ibc, Module, Staking, Stargate, Wasm};
 
-use super::types::IbcResponse;
-use super::IbcModuleMsg;
+use super::module::{IbcModule, IbcWasm};
+use super::relayer::IbcModuleMsg;
+use super::types::{IbcModuleId, IbcResponse, IbcRouterMsg};
 
 use anyhow::Result as AnyResult;
 use cosmwasm_std::{Api, BlockInfo, CustomMsg, CustomQuery, Storage};
 use serde::de::DeserializeOwned;
 
+/// Adds ibc capabilities to the router
 pub trait CosmosIbcRouter: CosmosRouter {
     /// Evaluates all ibc related actions
     fn ibc(
@@ -26,9 +30,9 @@ where
     CustomT::ExecT: CustomMsg + DeserializeOwned + 'static,
     CustomT::QueryT: CustomQuery + DeserializeOwned + 'static,
     CustomT: Module,
-    WasmT: Wasm<CustomT::ExecT, CustomT::QueryT>,
-    BankT: Bank,
-    StakingT: Staking,
+    WasmT: Wasm<CustomT::ExecT, CustomT::QueryT> + IbcWasm<CustomT::ExecT, CustomT::QueryT>,
+    BankT: Bank + IbcModule,
+    StakingT: Staking + IbcModule,
     DistrT: Distribution,
     IbcT: Ibc,
     GovT: Gov,
@@ -42,7 +46,7 @@ where
         msg: IbcRouterMsg,
     ) -> AnyResult<IbcResponse> {
         match msg.module {
-            IbcModule::Bank => match msg.msg {
+            IbcModuleId::Bank => match msg.msg {
                 IbcModuleMsg::ChannelOpen(m) => self
                     .bank
                     .ibc_channel_open(api, storage, self, block, m)
@@ -68,7 +72,7 @@ where
                     .ibc_packet_timeout(api, storage, self, block, m)
                     .map(Into::into),
             },
-            IbcModule::Staking => match msg.msg {
+            IbcModuleId::Staking => match msg.msg {
                 IbcModuleMsg::ChannelOpen(m) => self
                     .staking
                     .ibc_channel_open(api, storage, self, block, m)
@@ -94,7 +98,7 @@ where
                     .ibc_packet_timeout(api, storage, self, block, m)
                     .map(Into::into),
             },
-            IbcModule::Wasm(contract_addr) => match msg.msg {
+            IbcModuleId::Wasm(contract_addr) => match msg.msg {
                 IbcModuleMsg::ChannelOpen(m) => self
                     .wasm
                     .ibc_channel_open(api, contract_addr, storage, self, block, m)
