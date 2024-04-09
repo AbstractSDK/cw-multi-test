@@ -101,8 +101,6 @@ where
         } = self;
 
         transactional(storage, |write_cache, _| {
-            // TODO, This also doesn't work because the app is borrowed mutably and immutably too many times
-            // The only way it could work is with public cw-multi-test elements.
             router.ibc.relay(&*api, write_cache, router, block, msg)
         })
     }

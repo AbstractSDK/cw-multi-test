@@ -210,7 +210,6 @@ where
     // We start by verifying that we have an acknowledgment and not a timeout
     if has_event(&receive_response, TIMEOUT_RECEIVE_PACKET_EVENT) {
         // If there was a timeout, we timeout the packet on the sending chain
-        // TODO: We don't handle the chain closure in here for now in case of ordered channels
         let timeout_response = app1.relay(IbcPacketRelayingMsg::Timeout { packet })?;
 
         // We close the channel on the sending chain if it's request by the receiving chain
