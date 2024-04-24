@@ -92,7 +92,7 @@ where
         msg: Self::ExecT,
     ) -> AnyResult<AppResponse> {
         bail!(
-            "Unexpected exec msg {:?} from {:?} on module {}",
+            "Unexpected exec msg {:?} from {:?} on {} module",
             msg,
             sender,
             self.module_type
@@ -109,7 +109,7 @@ where
         request: Self::QueryT,
     ) -> AnyResult<Binary> {
         bail!(
-            "Unexpected custom query {:?} on module {}",
+            "Unexpected custom query {:?} on {} module",
             request,
             self.module_type
         )
@@ -125,7 +125,7 @@ where
         msg: Self::SudoT,
     ) -> AnyResult<AppResponse> {
         bail!(
-            "Unexpected sudo msg {:?} on module {}",
+            "Unexpected sudo msg {:?} on {} module",
             msg,
             self.module_type
         )
