@@ -93,11 +93,11 @@ impl
             storage: MockStorage::new(),
             bank: BankKeeper::new(),
             wasm: WasmKeeper::new(),
-            custom: FailingModule::new(),
+            custom: FailingModule::new("custom"),
             staking: StakeKeeper::new(),
             distribution: DistributionKeeper::new(),
-            ibc: IbcFailingModule::new(),
-            gov: GovFailingModule::new(),
+            ibc: IbcFailingModule::new("ibc"),
+            gov: GovFailingModule::new("gov"),
             remote: None,
         }
     }
@@ -128,11 +128,11 @@ where
             storage: MockStorage::new(),
             bank: BankKeeper::new(),
             wasm: WasmKeeper::new(),
-            custom: FailingModule::new(),
+            custom: FailingModule::new("custom"),
             staking: StakeKeeper::new(),
             distribution: DistributionKeeper::new(),
-            ibc: IbcFailingModule::new(),
-            gov: GovFailingModule::new(),
+            ibc: IbcFailingModule::new("ibc"),
+            gov: GovFailingModule::new("gov"),
             remote: None,
         }
     }

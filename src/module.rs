@@ -57,17 +57,17 @@ pub trait Module {
         QueryC: CustomQuery + DeserializeOwned + 'static;
 }
 
-pub struct FailingModule<ExecT, QueryT, SudoT>(PhantomData<(ExecT, QueryT, SudoT)>);
-
-impl<ExecT, QueryT, SudoT> FailingModule<ExecT, QueryT, SudoT> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
+pub struct FailingModule<ExecT, QueryT, SudoT> {
+    module_type: String,
+    _t: PhantomData<(ExecT, QueryT, SudoT)>,
 }
 
-impl<ExecT, QueryT, SudoT> Default for FailingModule<ExecT, QueryT, SudoT> {
-    fn default() -> Self {
-        Self::new()
+impl<ExecT, QueryT, SudoT> FailingModule<ExecT, QueryT, SudoT> {
+    pub fn new(module_type: &str) -> Self {
+        Self {
+            module_type: module_type.to_string(),
+            _t: PhantomData,
+        }
     }
 }
 
@@ -91,7 +91,12 @@ where
         sender: Addr,
         msg: Self::ExecT,
     ) -> AnyResult<AppResponse> {
-        bail!("Unexpected exec msg {:?} from {:?}", msg, sender)
+        bail!(
+            "Unexpected exec msg {:?} from {:?} on module {}",
+            msg,
+            sender,
+            self.module_type
+        )
     }
 
     /// Runs any [QueryT](Self::QueryT) message, always returns an error.
@@ -103,7 +108,11 @@ where
         _block: &BlockInfo,
         request: Self::QueryT,
     ) -> AnyResult<Binary> {
-        bail!("Unexpected custom query {:?}", request)
+        bail!(
+            "Unexpected custom query {:?} on module {}",
+            request,
+            self.module_type
+        )
     }
 
     /// Runs any [SudoT](Self::SudoT) privileged action, always returns an error.
@@ -115,7 +124,11 @@ where
         _block: &BlockInfo,
         msg: Self::SudoT,
     ) -> AnyResult<AppResponse> {
-        bail!("Unexpected sudo msg {:?}", msg)
+        bail!(
+            "Unexpected sudo msg {:?} on module {}",
+            msg,
+            self.module_type
+        )
     }
 }
 
