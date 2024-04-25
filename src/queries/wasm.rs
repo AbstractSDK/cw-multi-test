@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result as AnyResult;
 use cosmwasm_std::{Addr, Binary, CodeInfoResponse, CustomQuery, Order, Storage};
-use cw_orch_daemon::queriers::{CosmWasm, DaemonQuerier};
+use cw_orch::daemon::queriers::CosmWasm;
 
 use crate::{
     prefixed_storage::prefixed_read,
@@ -15,9 +15,12 @@ pub struct WasmRemoteQuerier;
 
 impl WasmRemoteQuerier {
     pub fn code_info(remote: RemoteChannel, code_id: u64) -> AnyResult<CodeInfoResponse> {
-        let wasm_querier = CosmWasm::new(remote.channel);
+        let wasm_querier = CosmWasm {
+            channel: remote.channel,
+            rt_handle: Some(remote.rt.clone()),
+        };
 
-        let code_info = remote.rt.block_on(wasm_querier.code(code_id))?;
+        let code_info = remote.rt.block_on(wasm_querier._code(code_id))?;
         let mut res = cosmwasm_std::CodeInfoResponse::default();
         res.code_id = code_id;
         res.creator = code_info.creator.to_string();
@@ -26,11 +29,14 @@ impl WasmRemoteQuerier {
     }
 
     pub fn load_distant_contract(remote: RemoteChannel, address: &Addr) -> AnyResult<ContractData> {
-        let wasm_querier = CosmWasm::new(remote.channel);
+        let wasm_querier = CosmWasm {
+            channel: remote.channel,
+            rt_handle: Some(remote.rt.clone()),
+        };
 
         let code_info = remote
             .rt
-            .block_on(wasm_querier.contract_info(address.clone()))?;
+            .block_on(wasm_querier._contract_info(address.clone()))?;
 
         Ok(ContractData {
             admin: {
@@ -51,10 +57,13 @@ impl WasmRemoteQuerier {
         contract_addr: String,
         key: Binary,
     ) -> AnyResult<Vec<u8>> {
-        let wasm_querier = CosmWasm::new(remote.channel);
+        let wasm_querier = CosmWasm {
+            channel: remote.channel,
+            rt_handle: Some(remote.rt.clone()),
+        };
         let query_result = remote
             .rt
-            .block_on(wasm_querier.contract_raw_state(contract_addr, key.to_vec()))
+            .block_on(wasm_querier._contract_raw_state(contract_addr, key.to_vec()))
             .map(|query_result| query_result.data);
         Ok(query_result?)
     }

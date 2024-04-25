@@ -14,14 +14,13 @@ use cw_multi_test::wasm_emulation::contract::WasmContract;
 use cw_multi_test::wasm_emulation::storage::analyzer::StorageAnalyzer;
 use cw_multi_test::BankKeeper;
 use cw_multi_test::Executor;
-use cw_orch_daemon::queriers::DaemonQuerier;
-use cw_orch_daemon::queriers::Node;
+use cw_orch::daemon::networks::PHOENIX_1;
+use cw_orch::daemon::queriers::Node;
 use std::path::Path;
 use tokio::runtime::Runtime;
 
 use cw20::Cw20QueryMsg;
 use cw_multi_test::AppBuilder;
-use cw_orch_networks::networks::PHOENIX_1;
 
 use cosmwasm_std::Empty;
 use cw_multi_test::WasmKeeper;
@@ -76,7 +75,13 @@ pub fn test() -> anyhow::Result<()> {
 
     let bank = BankKeeper::new().with_remote(remote_channel.clone());
 
-    let block = runtime.block_on(Node::new(remote_channel.channel.clone()).block_info())?;
+    let block = runtime.block_on(
+        Node {
+            channel: remote_channel.channel.clone(),
+            rt_handle: Some(runtime.handle().clone()),
+        }
+        ._block_info(),
+    )?;
     // First we instantiate a new app
     let app = AppBuilder::default()
         .with_wasm(wasm)

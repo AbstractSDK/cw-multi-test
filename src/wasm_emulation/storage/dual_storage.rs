@@ -10,12 +10,11 @@ use cosmwasm_vm::BackendError;
 use cosmwasm_vm::BackendResult;
 use cosmwasm_vm::GasInfo;
 use cosmwasm_vm::Storage;
-use cw_orch_daemon::queriers::DaemonQuerier;
 use num_bigint::{BigInt, Sign};
 use std::collections::HashMap;
 use std::iter;
 
-use cw_orch_daemon::queriers::CosmWasm;
+use cw_orch::daemon::queriers::CosmWasm;
 
 fn get_key_bigint(mut key1: Vec<u8>, mut key2: Vec<u8>) -> (BigInt, BigInt) {
     if key1.len() >= key2.len() {
@@ -107,10 +106,13 @@ impl Storage for DualStorage {
         let (mut value, gas_info) = self.local_storage.get(key);
         // If it's not available, we query it online if it was not removed locally
         if !self.removed_keys.contains(key) && value.as_ref().unwrap().is_none() {
-            let wasm_querier = CosmWasm::new(self.remote.channel.clone());
+            let wasm_querier = CosmWasm {
+                channel: self.remote.channel.clone(),
+                rt_handle: Some(self.remote.rt.clone()),
+            };
 
             let distant_result = self.remote.rt.block_on(
-                wasm_querier.contract_raw_state(self.contract_addr.clone(), key.to_vec()),
+                wasm_querier._contract_raw_state(self.contract_addr.clone(), key.to_vec()),
             );
 
             if let Ok(result) = distant_result {
@@ -177,11 +179,14 @@ impl Storage for DualStorage {
         if iterator.distant_iter.position == iterator.distant_iter.data.len()
             && iterator.distant_iter.key.is_some()
         {
-            let wasm_querier = CosmWasm::new(self.remote.channel.clone());
+            let wasm_querier = CosmWasm {
+                channel: self.remote.channel.clone(),
+                rt_handle: Some(self.remote.rt.clone()),
+            };
             let new_keys = self
                 .remote
                 .rt
-                .block_on(wasm_querier.all_contract_state(
+                .block_on(wasm_querier._all_contract_state(
                     self.contract_addr.clone(),
                     Some(PageRequest {
                         key: iterator.distant_iter.key.clone().unwrap(),

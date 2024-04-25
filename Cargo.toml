@@ -1,6 +1,6 @@
 [package]
 name = "cw-multi-test"
-version = "0.19.4"
+version = "0.20.0-rc"
 authors = ["Ethan Frey <ethanfrey@users.noreply.github.com>"]
 edition = "2021"
 description = "Testing tools for multi-contract interactions"
@@ -36,10 +36,8 @@ thiserror = "1.0.50"
 
 # Clone testing deps
 ## Network
-cw-orch-daemon = { version = "0.19.0" }
-cw-orch-networks = { version = "0.19.0" }
+cw-orch = { version = "0.22.0-rc", features = ["daemon"] }
 tokio = "1.28.2"
-ibc-chain-registry = "0.25.0"
 tonic = "0.10.2"
 
 ## Emulation

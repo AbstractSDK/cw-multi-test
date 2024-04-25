@@ -5,10 +5,9 @@ use cosmwasm_std::Addr;
 use cosmwasm_vm::GasInfo;
 use std::str::FromStr;
 
-use cw_orch_daemon::queriers::DaemonQuerier;
 use cw_utils::NativeBalance;
 
-use cw_orch_daemon::queriers::Bank;
+use cw_orch::daemon::queriers::Bank;
 
 use cosmwasm_std::Binary;
 use cosmwasm_std::Coin;
@@ -80,12 +79,15 @@ impl BankQuerier {
 
                 // If the amount is not available, we query it from the distant chain
                 if amount.is_none() {
-                    let querier = Bank::new(self.remote.channel.clone());
+                    let querier = Bank {
+                        channel: self.remote.channel.clone(),
+                        rt_handle: Some(self.remote.rt.clone()),
+                    };
 
                     let query_result = self
                         .remote
                         .rt
-                        .block_on(querier.balance(address, Some(denom.clone())))
+                        .block_on(querier._balance(address, Some(denom.clone())))
                         .map(|result| Uint128::from_str(&result[0].amount).unwrap());
 
                     if let Ok(distant_amount) = query_result {
@@ -107,11 +109,14 @@ impl BankQuerier {
 
                 // We query only if the bank balance doesn't exist
                 if amount.is_none() {
-                    let querier = Bank::new(self.remote.channel.clone());
+                    let querier = Bank {
+                        channel: self.remote.channel.clone(),
+                        rt_handle: Some(self.remote.rt.clone()),
+                    };
                     let query_result: Result<Vec<Coin>, _> = self
                         .remote
                         .rt
-                        .block_on(querier.balance(address, None))
+                        .block_on(querier._balance(address, None))
                         .map(|result| {
                             result
                                 .into_iter()

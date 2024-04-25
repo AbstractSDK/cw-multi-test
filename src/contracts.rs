@@ -401,15 +401,20 @@ pub mod test {
 
     use super::ContractWrapper;
 
-    fn execute(deps: DepsMut, env: Env, info: MessageInfo, _msg: Empty) -> StdResult<Response> {
+    fn execute(_deps: DepsMut, _env: Env, _info: MessageInfo, _msg: Empty) -> StdResult<Response> {
         Ok(Response::new())
     }
 
-    fn query(deps: Deps, env: Env, _msg: Empty) -> StdResult<Binary> {
+    fn query(_deps: Deps, _env: Env, _msg: Empty) -> StdResult<Binary> {
         to_json_binary("resp")
     }
 
-    fn instantiate(deps: DepsMut, env: Env, info: MessageInfo, _msg: Empty) -> StdResult<Response> {
+    fn instantiate(
+        _deps: DepsMut,
+        _env: Env,
+        _info: MessageInfo,
+        _msg: Empty,
+    ) -> StdResult<Response> {
         Ok(Response::new())
     }
 

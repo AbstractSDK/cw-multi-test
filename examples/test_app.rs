@@ -7,7 +7,7 @@ use cw20::Cw20QueryMsg;
 use cw_multi_test::wasm_emulation::channel::RemoteChannel;
 use cw_multi_test::AppBuilder;
 use cw_multi_test::BankKeeper;
-use cw_orch_daemon::networks::PHOENIX_1;
+use cw_orch::daemon::networks::PHOENIX_1;
 
 use cw_multi_test::WasmKeeper;
 

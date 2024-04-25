@@ -9,8 +9,7 @@ use cosmwasm_vm::{
     call_execute, call_instantiate, call_migrate, call_query, call_reply, call_sudo, Backend,
     BackendApi, Checksum, Instance, InstanceOptions, Querier, Size,
 };
-use cw_orch_daemon::queriers::CosmWasm;
-use cw_orch_daemon::queriers::DaemonQuerier;
+use cw_orch::daemon::queriers::CosmWasm;
 
 use cosmwasm_std::Order;
 use cosmwasm_std::Storage;
@@ -121,25 +120,31 @@ impl WasmContract {
         match self {
             WasmContract::Local(LocalWasmContract { code, .. }) => Ok(code.clone()),
             WasmContract::DistantContract(DistantContract { contract_addr }) => {
-                let wasm_querier = CosmWasm::new(fork_state.remote.channel);
+                let wasm_querier = CosmWasm {
+                    channel: fork_state.remote.channel.clone(),
+                    rt_handle: Some(fork_state.remote.rt.clone()),
+                };
 
                 let code_info = fork_state
                     .remote
                     .rt
-                    .block_on(wasm_querier.contract_info(contract_addr))?;
+                    .block_on(wasm_querier._contract_info(contract_addr))?;
                 let code = fork_state
                     .remote
                     .rt
-                    .block_on(wasm_querier.code_data(code_info.code_id))?;
+                    .block_on(wasm_querier._code_data(code_info.code_id))?;
                 Ok(code)
             }
             WasmContract::DistantCodeId(DistantCodeId { code_id }) => {
-                let wasm_querier = CosmWasm::new(fork_state.remote.channel);
+                let wasm_querier = CosmWasm {
+                    channel: fork_state.remote.channel.clone(),
+                    rt_handle: Some(fork_state.remote.rt.clone()),
+                };
 
                 let code = fork_state
                     .remote
                     .rt
-                    .block_on(wasm_querier.code_data(*code_id))?;
+                    .block_on(wasm_querier._code_data(*code_id))?;
                 Ok(code)
             }
         }
@@ -160,7 +165,7 @@ impl WasmContract {
         let address = function.get_address();
         let code = self.get_code(fork_state.clone())?;
 
-        let api = RealApi::new(&fork_state.remote.chain.bech32_prefix);
+        let api = RealApi::new(&fork_state.remote.chain.network_info.pub_address_prefix);
 
         // We create the backend here from outside information;
         let backend = Backend {

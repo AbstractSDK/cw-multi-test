@@ -1,27 +1,14 @@
-use crate::prefixed_storage::decode_length;
-use crate::prefixed_storage::to_length_prefixed;
-use crate::prefixed_storage::CONTRACT_STORAGE_PREFIX;
-use crate::wasm_emulation::channel::RemoteChannel;
-use crate::BankKeeper;
-use crate::Distribution;
-use crate::Gov;
-use crate::Ibc;
-use crate::Module;
-use crate::Staking;
-use crate::WasmKeeper;
-use cosmwasm_std::Addr;
-use cosmwasm_std::Api;
-use cosmwasm_std::Coin;
-use cosmwasm_std::CustomMsg;
-use cosmwasm_std::CustomQuery;
-use cosmwasm_std::Storage;
-use cw_orch_daemon::queriers::CosmWasm;
-use cw_orch_daemon::queriers::DaemonQuerier;
+use crate::{
+    prefixed_storage::{decode_length, to_length_prefixed, CONTRACT_STORAGE_PREFIX},
+    wasm_emulation::channel::RemoteChannel,
+    BankKeeper, Distribution, Gov, Ibc, Module, Staking, WasmKeeper,
+};
+use cosmwasm_std::{Addr, Api, Coin, CustomMsg, CustomQuery, Storage};
+use cw_orch::prelude::BankQuerier;
 use cw_utils::NativeBalance;
 use rustc_serialize::json::Json;
-use serde::Serialize;
-use serde::__private::from_utf8_lossy;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use treediff::diff;
 use treediff::tools::Recorder;
 
@@ -90,8 +77,8 @@ impl StorageAnalyzer {
             .into_iter()
             .map(|(key, value)| {
                 (
-                    from_utf8_lossy(&key).to_string(),
-                    from_utf8_lossy(&value).to_string(),
+                    String::from_utf8_lossy(&key).to_string(),
+                    String::from_utf8_lossy(&value).to_string(),
                 )
             })
             .collect()
@@ -118,7 +105,7 @@ impl StorageAnalyzer {
                     .try_into()
                     .unwrap();
                 let contract_addr_addr =
-                    from_utf8_lossy(&resulting_key[2..(addr_len + 2)]).to_string();
+                    String::from_utf8_lossy(&resulting_key[2..(addr_len + 2)]).to_string();
 
                 let split: Vec<_> = contract_addr_addr.split('/').collect();
                 if split.len() != 2 || format!("{}/", split[0]) != CONTRACT_STORAGE_PREFIX {
@@ -140,15 +127,18 @@ impl StorageAnalyzer {
             .map(|(contract, key, value)| {
                 (
                     contract,
-                    from_utf8_lossy(&key).to_string(),
-                    from_utf8_lossy(&value).to_string(),
+                    String::from_utf8_lossy(&key).to_string(),
+                    String::from_utf8_lossy(&value).to_string(),
                 )
             })
             .collect()
     }
 
     pub fn compare_all_readable_contract_storage(&self) {
-        let wasm_querier = CosmWasm::new(self.remote.channel.clone());
+        let wasm_querier = cw_orch::daemon::queriers::CosmWasm {
+            channel: self.remote.channel.clone(),
+            rt_handle: Some(self.remote.rt.clone()),
+        };
         self.all_contract_storage()
             .into_iter()
             .for_each(|(contract_addr, key, value)| {
@@ -156,30 +146,30 @@ impl StorageAnalyzer {
                 let distant_data = self
                     .remote
                     .rt
-                    .block_on(wasm_querier.contract_raw_state(contract_addr.clone(), key.clone()));
+                    .block_on(wasm_querier._contract_raw_state(contract_addr.clone(), key.clone()));
 
                 if let Ok(data) = distant_data {
                     let local_json: Json =
-                        if let Ok(v) = from_utf8_lossy(&value).to_string().parse() {
+                        if let Ok(v) = String::from_utf8_lossy(&value).to_string().parse() {
                             v
                         } else {
                             log::info!(
                                 "Storage at {}, and key {}, was : {:x?}, now {:x?}",
                                 contract_addr,
-                                from_utf8_lossy(&key).to_string(),
+                                String::from_utf8_lossy(&key).to_string(),
                                 data.data,
                                 value
                             );
                             return;
                         };
                     let distant_json: Json =
-                        if let Ok(v) = from_utf8_lossy(&data.data).to_string().parse() {
+                        if let Ok(v) = String::from_utf8_lossy(&data.data).to_string().parse() {
                             v
                         } else {
                             log::info!(
                                 "Storage at {}, and key {}, was : {:x?}, now {:x?}",
                                 contract_addr,
-                                from_utf8_lossy(&key).to_string(),
+                                String::from_utf8_lossy(&key).to_string(),
                                 data.data,
                                 value
                             );
@@ -200,21 +190,21 @@ impl StorageAnalyzer {
                     log::info!(
                         "Storage at {}, and key {}, changed like so : {:?}",
                         contract_addr,
-                        from_utf8_lossy(&key).to_string(),
+                        String::from_utf8_lossy(&key).to_string(),
                         changes
                     );
-                } else if let Ok(v) = from_utf8_lossy(&value).to_string().parse::<Json>() {
+                } else if let Ok(v) = String::from_utf8_lossy(&value).to_string().parse::<Json>() {
                     log::info!(
                         "Storage at {}, and key {}, is new : {}",
                         contract_addr,
-                        from_utf8_lossy(&key).to_string(),
+                        String::from_utf8_lossy(&key).to_string(),
                         v
                     );
                 } else {
                     log::info!(
                         "Storage at {}, and key {}, is new : {:?}",
                         contract_addr,
-                        from_utf8_lossy(&key).to_string(),
+                        String::from_utf8_lossy(&key).to_string(),
                         value
                     );
                 }
@@ -233,25 +223,17 @@ impl StorageAnalyzer {
     }
 
     pub fn compare_all_balances(&self) {
-        let bank_querier = cw_orch_daemon::queriers::Bank::new(self.remote.channel.clone());
+        let bank_querier = cw_orch::daemon::queriers::Bank {
+            channel: self.remote.channel.clone(),
+            rt_handle: Some(self.remote.rt.clone()),
+        };
         self.get_all_local_balances()
             .into_iter()
             .for_each(|(addr, balances)| {
                 // We look for the data at that key on the contract
-                let distant_data = self
-                    .remote
-                    .rt
-                    .block_on(bank_querier.balance(addr.clone(), None));
+                let distant_data = bank_querier.balance(addr.clone(), None);
 
-                if let Ok(data) = distant_data {
-                    let distant_coins: Vec<Coin> = data
-                        .iter()
-                        .map(|c| Coin {
-                            amount: c.amount.parse().unwrap(),
-                            denom: c.denom.clone(),
-                        })
-                        .collect();
-
+                if let Ok(distant_coins) = distant_data {
                     let distant_coins = serde_json::to_string(&distant_coins).unwrap();
                     let distant_coins: Json = distant_coins.parse().unwrap();
 

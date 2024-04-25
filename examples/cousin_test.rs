@@ -11,7 +11,7 @@ use cw_multi_test::{
     wasm_emulation::{channel::RemoteChannel, contract::WasmContract},
     App, AppBuilder, BankKeeper, ContractWrapper, Executor, WasmKeeper,
 };
-use cw_orch_networks::networks::PHOENIX_1;
+use cw_orch::daemon::networks::PHOENIX_1;
 use tokio::runtime::Runtime;
 
 mod counter;
