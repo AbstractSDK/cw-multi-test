@@ -103,7 +103,7 @@ impl DualStorage {
 
 impl Storage for DualStorage {
     fn get(&self, key: &[u8]) -> BackendResult<Option<Vec<u8>>> {
-        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Getting key : {:x?}", String::from_utf8_lossy(key));
+        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Getting key on contract: {}; key: {}", self.contract_addr, String::from_utf8_lossy(key));
         // First we try to get the value locally
         let (mut value, gas_info) = self.local_storage.get(key);
         // If it's not available, we query it online if it was not removed locally
@@ -124,7 +124,12 @@ impl Storage for DualStorage {
                 }
             }
         }
-        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Value found: {:x?}", value.as_ref().map(|v| v.clone().map(|v| String::from_utf8_lossy(&v).to_string())));
+        if let Ok(Some(value)) = value.as_ref() {
+            log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Value found: {}", String::from_utf8_lossy(value));
+        } else {
+            log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Found no value");
+        }
+
         (value, gas_info)
     }
 
@@ -268,13 +273,13 @@ impl Storage for DualStorage {
     }
 
     fn set(&mut self, key: &[u8], value: &[u8]) -> BackendResult<()> {
-        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Setting key: {:x?} ;value:  {:x?}", String::from_utf8_lossy(key), String::from_utf8_lossy(value));
+        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Setting key on contract: {}; key: {}; value: {}", self.contract_addr, String::from_utf8_lossy(key), String::from_utf8_lossy(value));
         self.removed_keys.remove(key); // It's not locally removed anymore, because we set it locally
         self.local_storage.set(key, value)
     }
 
     fn remove(&mut self, key: &[u8]) -> BackendResult<()> {
-        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Removing key: {:x?}", String::from_utf8_lossy(key));
+        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Removing key on contract: {}; {}", self.contract_addr, String::from_utf8_lossy(key));
         self.removed_keys.insert(key.to_vec()); // We indicate locally if it's removed. So that we can remove keys and not query them on the distant chain
         self.local_storage.remove(key)
     }
