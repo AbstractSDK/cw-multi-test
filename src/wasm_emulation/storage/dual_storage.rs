@@ -1,5 +1,6 @@
 use crate::wasm_emulation::channel::RemoteChannel;
 use crate::wasm_emulation::storage::mock_storage::{GAS_COST_LAST_ITERATION, GAS_COST_RANGE};
+use crate::wasm_emulation::storage::CLONE_TESTING_STORAGE_LOG;
 
 use super::mock_storage::MockStorage;
 use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
@@ -102,10 +103,12 @@ impl DualStorage {
 
 impl Storage for DualStorage {
     fn get(&self, key: &[u8]) -> BackendResult<Option<Vec<u8>>> {
+        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Getting key : {:x?}", String::from_utf8_lossy(key));
         // First we try to get the value locally
         let (mut value, gas_info) = self.local_storage.get(key);
         // If it's not available, we query it online if it was not removed locally
         if !self.removed_keys.contains(key) && value.as_ref().unwrap().is_none() {
+            log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Value not set locally, fetching remote key");
             let wasm_querier = CosmWasm {
                 channel: self.remote.channel.clone(),
                 rt_handle: Some(self.remote.rt.clone()),
@@ -121,6 +124,7 @@ impl Storage for DualStorage {
                 }
             }
         }
+        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Value found: {:x?}", value.as_ref().map(|v| v.clone().map(|v| String::from_utf8_lossy(&v).to_string())));
         (value, gas_info)
     }
 
