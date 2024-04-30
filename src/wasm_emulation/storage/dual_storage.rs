@@ -168,6 +168,18 @@ impl Storage for DualStorage {
         let new_id = last_id + 1;
         self.iterators.insert(new_id, iter.clone());
 
+        log::debug!(
+            target: CLONE_TESTING_STORAGE_LOG,
+            "Create iterator {} on contract {} between {:?} and {:?}, order: {:?}",
+            new_id,
+            self.contract_addr,
+            start.map(|v|String::from_utf8_lossy(v)),
+            end.map(|v|String::from_utf8_lossy(v)),
+            match order{
+                Order::Ascending => "ascending",
+                Order::Descending => "descending"
+            }
+        );
         (Ok(new_id), gas_info)
     }
 
@@ -231,7 +243,24 @@ impl Storage for DualStorage {
         }
 
         // 2. We find the first key in order between distant and local storage
-        let next_local = self.local_storage.peak(iterator.local_iter).unwrap();
+        // We need to disregard local keys that have been removed
+        let next_local;
+        loop {
+            let next = self.local_storage.peak(iterator.local_iter).unwrap();
+            if let Some((next_key, _next_value)) = next.as_ref() {
+                if self.removed_keys.contains(next_key) {
+                    // We disregard the current key
+                    self.local_storage.next(iterator.local_iter).0.unwrap();
+                    continue;
+                } else {
+                    next_local = next;
+                    break;
+                }
+            } else {
+                next_local = next;
+                break;
+            }
+        }
         let next_distant = iterator
             .distant_iter
             .data
@@ -242,10 +271,20 @@ impl Storage for DualStorage {
                 // We compare the two keys with the order and return the higher key
                 let key_local = BigInt::from_bytes_be(Sign::Plus, &local.0);
                 let key_distant = BigInt::from_bytes_be(Sign::Plus, &distant.key);
-                if (key_local < key_distant) == iterator.distant_iter.reverse {
+
+                if key_local == key_distant {
+                    // Equal keys, means we need to take the local key, which is newer
+                    // And we need to skip the distant key
+                    iterator.distant_iter.position += 1;
+                    self.local_storage.next(iterator.local_iter).0.unwrap()
+                } else if (key_local < key_distant) == iterator.distant_iter.reverse {
+                    // Keys are ordered such that the distant key is chosen
+                    // We upgrade the distant iterator and return the distant key
                     iterator.distant_iter.position += 1;
                     Some((distant.key.clone(), distant.value.clone()))
                 } else {
+                    // Keys are ordered such that the local key is chosen
+                    // We get the next local key
                     self.local_storage.next(iterator.local_iter).0.unwrap()
                 }
             } else {
@@ -260,11 +299,25 @@ impl Storage for DualStorage {
 
         // We add the gas cost
         if let Some((key, value)) = key_value {
+            log::debug!(
+                target: CLONE_TESTING_STORAGE_LOG,
+                "Got next iterator value contract {}, iterator {}, key {}, value {}",
+                self.contract_addr,
+                iterator_id,
+                String::from_utf8_lossy(&key),
+                String::from_utf8_lossy(&value)
+            );
             (
                 Ok(Some((key.clone(), value.clone()))),
                 GasInfo::with_externally_used((key.len() + value.len()) as u64),
             )
         } else {
+            log::debug!(
+                target: CLONE_TESTING_STORAGE_LOG,
+                "No more values for iterator {} contract {}",
+                self.contract_addr,
+                iterator_id,
+            );
             (
                 Ok(None),
                 GasInfo::with_externally_used(GAS_COST_LAST_ITERATION),
