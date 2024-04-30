@@ -268,11 +268,13 @@ impl Storage for DualStorage {
     }
 
     fn set(&mut self, key: &[u8], value: &[u8]) -> BackendResult<()> {
+        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Setting key: {:x?} ;value:  {:x?}", String::from_utf8_lossy(key), String::from_utf8_lossy(value));
         self.removed_keys.remove(key); // It's not locally removed anymore, because we set it locally
         self.local_storage.set(key, value)
     }
 
     fn remove(&mut self, key: &[u8]) -> BackendResult<()> {
+        log::debug!(target: CLONE_TESTING_STORAGE_LOG, "Removing key: {:x?}", String::from_utf8_lossy(key));
         self.removed_keys.insert(key.to_vec()); // We indicate locally if it's removed. So that we can remove keys and not query them on the distant chain
         self.local_storage.remove(key)
     }
