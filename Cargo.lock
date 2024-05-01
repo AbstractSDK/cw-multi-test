@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "cw-multi-test"
-version = "0.20.0-rc"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "bech32 0.9.1",
@@ -872,9 +872,9 @@ dependencies = [
 
 [[package]]
 name = "cw-orch"
-version = "0.22.0-rc1"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2dadb0d3efe8116adde3a00e005d6bb8e6d5e61269ee298f16575137920789b"
+checksum = "0ab0efd28ea15c6d2a12736379c67b97118268b8b1c227483b315286a182da12"
 dependencies = [
  "anyhow",
  "cosmrs",
@@ -908,9 +908,9 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-core"
-version = "1.0.0-rc"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec6d4ff5ea61a14a73b9c480d2600a0e8fbb847ea3e6696741d0a4289e2b81a0"
+checksum = "1c8e62b4d04699596bc2f45c57a8e5459495584d8127588ae4bbe7f95d616b61"
 dependencies = [
  "abstract-cw-multi-test",
  "anyhow",
@@ -927,9 +927,9 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-daemon"
-version = "0.22.0-rc"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbc35a85bf5e7808bd076dae3704ce70670fb1194576a7a71f1ac5c2018e51a6"
+checksum = "a457b6c10226854c69211e847b5402b557ad9ff4e2a4e35ec325bfdc6493c37b"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -979,9 +979,9 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-mock"
-version = "0.22.0-rc"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdbe04cc54fa4559a6efb4e2dd20a921e064da36e274b440150d4b7e6a56ed45"
+checksum = "ad451fddf9a61db34c7c2fd0852a83238ffcada483dcacfac4622e9085df234f"
 dependencies = [
  "abstract-cw-multi-test",
  "cosmwasm-std",
@@ -994,9 +994,9 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-networks"
-version = "0.22.0-rc"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12107c5bbe6f80f5b30d617b6e5c2ab9a0131bce4940d44b7ca93626b4e64bdc"
+checksum = "7557d86fb243aabf48d4358dec24b27b3fb4a4e7283ad384ae267dc9dbc2a5d4"
 dependencies = [
  "cw-orch-core",
  "serde",
@@ -1004,9 +1004,9 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-traits"
-version = "0.22.0-rc"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4509406490b3682b7af9d7f0afac0021ffb54fbb8a4c7294218740498681e962"
+checksum = "5959ce29e9d8a52594b47933a0a2736ea94dd9bf5e29b220cbdbe2b097f07c3a"
 dependencies = [
  "cw-orch-core",
  "prost",
