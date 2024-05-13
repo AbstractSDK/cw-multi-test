@@ -17,7 +17,8 @@ backtrace = ["anyhow/backtrace"]
 cosmwasm_2_0 = ["cosmwasm-std/cosmwasm_2_0"]
 
 [dependencies]
-
+anyhow = "1.0.82"
+bech32 = "0.11.0"
 cosmwasm-std = { version = "2.0.2", features = [
     "iterator",
     "staking",
@@ -32,6 +33,7 @@ schemars = "0.8.17"
 serde = "1.0.199"
 sha2 = "0.10.8"
 thiserror = "1.0.59"
+
 
 serde_json = "1.0.40"
 cosmwasm-schema = "2.0.3"
