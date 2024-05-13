@@ -126,7 +126,7 @@ pub struct IbcPacketReceived {
 
 #[cosmwasm_schema::cw_serde]
 pub struct IbcPacketAck {
-    pub ack: Binary,
+    pub ack: Option<Binary>,
 }
 
 /// This is a custom msg that is used for executing actions on the IBC module
@@ -197,7 +197,7 @@ pub struct AppIbcBasicResponse {
 #[derive(Default)]
 pub struct AppIbcReceiveResponse {
     pub events: Vec<Event>,
-    pub acknowledgement: Binary,
+    pub acknowledgement: Option<Binary>,
 }
 
 impl From<IbcChannelOpenResponse> for IbcResponse {
