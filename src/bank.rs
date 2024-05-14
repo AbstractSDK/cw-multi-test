@@ -334,8 +334,11 @@ impl Module for BankKeeper {
             )?;
         }
 
-        // No acknowledgment needed
-        Ok(AppIbcReceiveResponse::default())
+        // Default acknowledgment (defined here https://github.com/cosmos/ibc/blob/main/spec/app/ics-020-fungible-token-transfer/README.md#data-structures)
+        Ok(AppIbcReceiveResponse {
+            events: vec![],
+            acknowledgement: "{\"result\": \"AQ==\"}".as_bytes().into(),
+        })
     }
 
     fn ibc_packet_acknowledge<ExecC, QueryC>(
