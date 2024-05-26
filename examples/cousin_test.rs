@@ -11,10 +11,17 @@ use cw_multi_test::{
     wasm_emulation::{channel::RemoteChannel, contract::WasmContract},
     App, AppBuilder, BankKeeper, ContractWrapper, Executor, WasmKeeper,
 };
-use cw_orch::daemon::networks::PHOENIX_1;
-use tokio::runtime::Runtime;
+use cw_orch::{daemon::{networks::PHOENIX_1, GrpcChannel}, environment::ChainInfoOwned};
+use tokio::runtime::{Handle, Runtime};
+use tonic::transport::Channel;
 
 mod counter;
+
+fn get_channel(chain: impl Into<ChainInfoOwned>, rt: Handle) -> AnyResult<Channel> {
+    let chain = chain.into();
+    let channel = rt.block_on(GrpcChannel::connect(&chain.grpc_urls, &chain.chain_id))?;
+    Ok(channel)
+}
 
 pub const SENDER: &str = "terra17c6ts8grcfrgquhj3haclg44le8s7qkx6l2yx33acguxhpf000xqhnl3je";
 fn increment(app: &mut App<BankKeeper, MockApiBech32>, contract: Addr) -> AnyResult<()> {
@@ -70,7 +77,11 @@ fn test() -> AnyResult<()> {
 
     let runtime = Runtime::new()?;
     let chain = PHOENIX_1;
-    let remote_channel = RemoteChannel::new(&runtime, chain.clone())?;
+    let remote_channel = RemoteChannel::new(
+        &runtime,
+        get_channel(chain.clone(), runtime.handle().clone())?,
+        chain.network_info.pub_address_prefix,
+    )?;
 
     let wasm = WasmKeeper::<Empty, Empty>::new()
         .with_remote(remote_channel.clone())

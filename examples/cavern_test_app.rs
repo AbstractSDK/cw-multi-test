@@ -1,23 +1,23 @@
-use cosmwasm_schema::cw_serde;
-use cosmwasm_schema::QueryResponses;
-use cosmwasm_std::coins;
-use cosmwasm_std::Addr;
-use cosmwasm_std::BlockInfo;
-use cosmwasm_std::ContractInfoResponse;
-use cosmwasm_std::QueryRequest;
-use cosmwasm_std::WasmQuery;
+use anyhow::Result as AnyResult;
+use cosmwasm_schema::{cw_serde, QueryResponses};
+use cosmwasm_std::{coins, Addr, BlockInfo, ContractInfoResponse, QueryRequest, WasmQuery};
 use cw20::BalanceResponse;
 use cw_multi_test::addons::MockAddressGenerator;
-use cw_multi_test::addons::MockApiBech32;
-use cw_multi_test::wasm_emulation::channel::RemoteChannel;
-use cw_multi_test::wasm_emulation::contract::WasmContract;
-use cw_multi_test::wasm_emulation::storage::analyzer::StorageAnalyzer;
-use cw_multi_test::BankKeeper;
-use cw_multi_test::Executor;
-use cw_orch::daemon::networks::PHOENIX_1;
-use cw_orch::daemon::queriers::Node;
+use cw_multi_test::{
+    addons::MockApiBech32,
+    wasm_emulation::{
+        channel::RemoteChannel, contract::WasmContract, storage::analyzer::StorageAnalyzer,
+    },
+    BankKeeper, Executor,
+};
+use cw_orch::{
+    daemon::{networks::PHOENIX_1, queriers::Node, GrpcChannel},
+    environment::ChainInfoOwned,
+};
 use std::path::Path;
+use tokio::runtime::Handle;
 use tokio::runtime::Runtime;
+use tonic::transport::Channel;
 
 use cw20::Cw20QueryMsg;
 use cw_multi_test::AppBuilder;
@@ -57,6 +57,12 @@ pub struct InstantiateMsg {
 
 /// END CONTRACT MSGs
 
+fn get_channel(chain: impl Into<ChainInfoOwned>, rt: Handle) -> AnyResult<Channel> {
+    let chain = chain.into();
+    let channel = rt.block_on(GrpcChannel::connect(&chain.grpc_urls, &chain.chain_id))?;
+    Ok(channel)
+}
+
 pub fn test() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -67,7 +73,11 @@ pub fn test() -> anyhow::Result<()> {
 
     let runtime = Runtime::new()?;
     let chain = PHOENIX_1;
-    let remote_channel = RemoteChannel::new(&runtime, chain.clone())?;
+    let remote_channel = RemoteChannel::new(
+        &runtime,
+        get_channel(chain.clone(), runtime.handle().clone())?,
+        chain.network_info.pub_address_prefix,
+    )?;
 
     let wasm = WasmKeeper::<Empty, Empty>::new()
         .with_remote(remote_channel.clone())

@@ -4,27 +4,23 @@ use cw_orch::prelude::ChainInfoOwned;
 use tokio::runtime::{Handle, Runtime};
 use tonic::transport::Channel;
 
-fn get_channel(chain: impl Into<ChainInfoOwned>, rt: Handle) -> AnyResult<Channel> {
-    let chain = chain.into();
-    let channel = rt.block_on(GrpcChannel::connect(&chain.grpc_urls, &chain.chain_id))?;
-    Ok(channel)
-}
-
 #[derive(Clone)]
 pub struct RemoteChannel {
     pub rt: Handle,
     pub channel: Channel,
-    pub chain: ChainInfoOwned,
+    pub pub_address_prefix: String,
 }
 
 impl RemoteChannel {
-    pub fn new(rt: &Runtime, chain: impl Into<ChainInfoOwned>) -> AnyResult<Self> {
-        let chain = chain.into();
-        let channel = get_channel(chain.clone(), rt.handle().clone())?;
+    pub fn new(
+        rt: &Runtime,
+        channel: Channel,
+        pub_address_prefix: impl Into<String>,
+    ) -> AnyResult<Self> {
         Ok(Self {
             rt: rt.handle().clone(),
             channel,
-            chain,
+            pub_address_prefix: pub_address_prefix.into(),
         })
     }
 }

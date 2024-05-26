@@ -165,7 +165,7 @@ impl WasmContract {
         let address = function.get_address();
         let code = self.get_code(fork_state.clone())?;
 
-        let api = RealApi::new(&fork_state.remote.chain.network_info.pub_address_prefix);
+        let api = RealApi::new(&fork_state.remote.pub_address_prefix);
 
         // We create the backend here from outside information;
         let backend = Backend {

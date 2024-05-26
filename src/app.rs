@@ -327,8 +327,8 @@ where
 
         let mut addresses = ADDRESSES.may_load(storage).unwrap().unwrap_or_default();
 
-        let new_address = RealApi::new(&&remote.chain.network_info.pub_address_prefix.clone())
-            .next_address(addresses.len());
+        let new_address =
+            RealApi::new(&remote.pub_address_prefix.clone()).next_address(addresses.len());
         addresses.push(new_address.clone());
         ADDRESSES.save(storage, &addresses).unwrap();
 

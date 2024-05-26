@@ -130,9 +130,7 @@ impl<
 
                 let deps = OwnedDeps {
                     storage,
-                    api: MockApiBech32::new(
-                        &self.fork_state.remote.chain.network_info.pub_address_prefix,
-                    ),
+                    api: MockApiBech32::new(&self.fork_state.remote.pub_address_prefix),
                     querier: MockQuerier::new(self.fork_state.clone()),
                     custom_query_type: PhantomData::<QueryC>,
                 };
