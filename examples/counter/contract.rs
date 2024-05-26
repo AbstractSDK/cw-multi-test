@@ -48,16 +48,12 @@ pub fn execute(
 #[cfg_attr(feature = "export", entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::GetCount {} => to_json_binary(&query::count(deps)?),
-        QueryMsg::GetCousinCount {} => to_json_binary(&query::cousin_count(deps)?),
-        QueryMsg::GetRawCousinCount {} => to_json_binary(&query::raw_cousin_count(deps)?),
+        QueryMsg::Count {} => to_json_binary(&query::count(deps)?),
+        QueryMsg::CousinCount {} => to_json_binary(&query::cousin_count(deps)?),
+        QueryMsg::RawCousinCount {} => to_json_binary(&query::raw_cousin_count(deps)?),
     }
 }
 
-#[cfg_attr(feature = "export", entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
-    Ok(Response::default().add_attribute("action", "migrate"))
-}
 // ANCHOR_END: interface_entry
 
 #[cfg(test)]

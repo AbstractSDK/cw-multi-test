@@ -4,14 +4,17 @@ fn main() {
 use std::path::Path;
 
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{Addr, Empty};
-use counter::msg::{ExecuteMsg, GetCountResponse, QueryMsg};
-use cw_multi_test::{
+use clone_cw_multi_test::{
     addons::{MockAddressGenerator, MockApiBech32},
     wasm_emulation::{channel::RemoteChannel, contract::WasmContract},
     App, AppBuilder, BankKeeper, ContractWrapper, Executor, WasmKeeper,
 };
-use cw_orch::{daemon::{networks::PHOENIX_1, GrpcChannel}, environment::ChainInfoOwned};
+use cosmwasm_std::{Addr, Empty};
+use counter::msg::{ExecuteMsg, GetCountResponse, QueryMsg};
+use cw_orch::{
+    daemon::{networks::PHOENIX_1, GrpcChannel},
+    environment::ChainInfoOwned,
+};
 use tokio::runtime::{Handle, Runtime};
 use tonic::transport::Channel;
 
@@ -38,7 +41,7 @@ fn increment(app: &mut App<BankKeeper, MockApiBech32>, contract: Addr) -> AnyRes
 fn count(app: &App<BankKeeper, MockApiBech32>, contract: Addr) -> AnyResult<GetCountResponse> {
     Ok(app
         .wrap()
-        .query_wasm_smart(contract.clone(), &QueryMsg::GetCount {})?)
+        .query_wasm_smart(contract.clone(), &QueryMsg::Count {})?)
 }
 
 fn raw_cousin_count(
@@ -47,7 +50,7 @@ fn raw_cousin_count(
 ) -> AnyResult<GetCountResponse> {
     Ok(app
         .wrap()
-        .query_wasm_smart(contract.clone(), &QueryMsg::GetRawCousinCount {})?)
+        .query_wasm_smart(contract.clone(), &QueryMsg::RawCousinCount {})?)
 }
 
 fn cousin_count(
@@ -56,7 +59,7 @@ fn cousin_count(
 ) -> AnyResult<GetCountResponse> {
     Ok(app
         .wrap()
-        .query_wasm_smart(contract.clone(), &QueryMsg::GetCousinCount {})?)
+        .query_wasm_smart(contract.clone(), &QueryMsg::CousinCount {})?)
 }
 
 fn test() -> AnyResult<()> {

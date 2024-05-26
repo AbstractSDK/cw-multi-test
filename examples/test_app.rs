@@ -1,16 +1,11 @@
 use anyhow::Result as AnyResult;
+use clone_cw_multi_test::{wasm_emulation::channel::RemoteChannel, AppBuilder, BankKeeper, Executor, WasmKeeper};
 use cosmwasm_std::Addr;
 use cw20::AllAccountsResponse;
 use cw20::Cw20ExecuteMsg;
-use cw_multi_test::Executor;
 
 use cw20::Cw20QueryMsg;
-use cw_multi_test::wasm_emulation::channel::RemoteChannel;
-use cw_multi_test::AppBuilder;
-use cw_multi_test::BankKeeper;
 use cw_orch::daemon::networks::PHOENIX_1;
-
-use cw_multi_test::WasmKeeper;
 
 use cosmwasm_std::Empty;
 use cw_orch::daemon::GrpcChannel;

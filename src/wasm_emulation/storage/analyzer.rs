@@ -29,6 +29,9 @@ pub struct StorageAnalyzer {
     pub remote: RemoteChannel,
 }
 
+pub type CustomWasmKeeper<CustomT> =
+    WasmKeeper<<CustomT as Module>::ExecT, <CustomT as Module>::QueryT>;
+
 impl StorageAnalyzer {
     pub fn new<ApiT, StorageT, CustomT, StakingT, DistrT, IbcT, GovT>(
         app: &App<
@@ -36,7 +39,7 @@ impl StorageAnalyzer {
             ApiT,
             StorageT,
             CustomT,
-            WasmKeeper<CustomT::ExecT, CustomT::QueryT>,
+            CustomWasmKeeper<CustomT>,
             StakingT,
             DistrT,
             IbcT,

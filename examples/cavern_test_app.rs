@@ -1,15 +1,10 @@
 use anyhow::Result as AnyResult;
+use clone_cw_multi_test::{addons::{MockAddressGenerator, MockApiBech32}, wasm_emulation::{
+        channel::RemoteChannel, contract::WasmContract, storage::analyzer::StorageAnalyzer,
+    }, AppBuilder, BankKeeper, Executor, WasmKeeper};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{coins, Addr, BlockInfo, ContractInfoResponse, QueryRequest, WasmQuery};
 use cw20::BalanceResponse;
-use cw_multi_test::addons::MockAddressGenerator;
-use cw_multi_test::{
-    addons::MockApiBech32,
-    wasm_emulation::{
-        channel::RemoteChannel, contract::WasmContract, storage::analyzer::StorageAnalyzer,
-    },
-    BankKeeper, Executor,
-};
 use cw_orch::{
     daemon::{networks::PHOENIX_1, queriers::Node, GrpcChannel},
     environment::ChainInfoOwned,
@@ -20,10 +15,8 @@ use tokio::runtime::Runtime;
 use tonic::transport::Channel;
 
 use cw20::Cw20QueryMsg;
-use cw_multi_test::AppBuilder;
 
 use cosmwasm_std::Empty;
-use cw_multi_test::WasmKeeper;
 use moneymarket::market::ExecuteMsg;
 
 /// COUNTER CONTRACT MSGs

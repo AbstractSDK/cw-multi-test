@@ -16,7 +16,7 @@ pub fn cousin_count(deps: Deps) -> StdResult<GetCountResponse> {
     let cousin_count: GetCountResponse =
         deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
             contract_addr: state.cousin.unwrap().to_string(),
-            msg: to_json_binary(&QueryMsg::GetCount {})?,
+            msg: to_json_binary(&QueryMsg::Count {})?,
         }))?;
     Ok(cousin_count)
 }

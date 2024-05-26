@@ -506,6 +506,7 @@ where
         self
     }
 
+    #[allow(clippy::type_complexity)]
     /// Builds final `App`. At this point all components type have to be properly related to each
     /// other. If there are some generics related compilation errors, make sure that all components
     /// are properly relating to each other.
