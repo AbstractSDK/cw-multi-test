@@ -409,6 +409,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "clone-cw-multi-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bech32 0.9.1",
+ "cosmrs",
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cosmwasm-vm",
+ "cw-orch",
+ "cw-storage-plus 1.2.0",
+ "cw-utils 1.0.3",
+ "cw2 1.1.2",
+ "cw20 1.1.2",
+ "derivative",
+ "env_logger",
+ "hex",
+ "hex-literal",
+ "itertools",
+ "log",
+ "moneymarket",
+ "num-bigint",
+ "once_cell",
+ "prost",
+ "rustc-serialize",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "treediff",
+ "wasmer",
+]
+
+[[package]]
 name = "clru"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -831,43 +868,6 @@ dependencies = [
  "schemars",
  "serde",
  "thiserror",
-]
-
-[[package]]
-name = "cw-multi-test"
-version = "0.20.0"
-dependencies = [
- "anyhow",
- "bech32 0.9.1",
- "cosmrs",
- "cosmwasm-schema",
- "cosmwasm-std",
- "cosmwasm-vm",
- "cw-orch",
- "cw-storage-plus 1.2.0",
- "cw-utils 1.0.3",
- "cw2 1.1.2",
- "cw20 1.1.2",
- "derivative",
- "env_logger",
- "hex",
- "hex-literal",
- "itertools",
- "log",
- "moneymarket",
- "num-bigint",
- "once_cell",
- "prost",
- "rustc-serialize",
- "schemars",
- "serde",
- "serde_json",
- "sha2 0.10.8",
- "thiserror",
- "tokio",
- "tonic",
- "treediff",
- "wasmer",
 ]
 
 [[package]]

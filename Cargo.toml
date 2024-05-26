@@ -1,9 +1,9 @@
 [package]
-name = "cw-multi-test"
-version = "0.20.0"
+name = "clone-cw-multi-test"
+version = "0.1.0"
 authors = ["Ethan Frey <ethanfrey@users.noreply.github.com>"]
 edition = "2021"
-description = "Testing tools for multi-contract interactions"
+description = "Testing tools for multi-contract interactions. Helps simulating chain behavior with on-chain storage locally"
 license = "Apache-2.0"
 repository = "https://github.com/CosmWasm/cw-multi-test"
 homepage = "https://cosmwasm.com"
