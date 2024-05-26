@@ -1,6 +1,4 @@
 use anyhow::Result as AnyResult;
-use cw_orch::daemon::GrpcChannel;
-use cw_orch::prelude::ChainInfoOwned;
 use tokio::runtime::{Handle, Runtime};
 use tonic::transport::Channel;
 
