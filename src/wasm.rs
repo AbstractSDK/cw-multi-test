@@ -65,10 +65,6 @@ pub struct ContractData {
     pub creator: Addr,
     /// Optional address of account who can execute migrations
     pub admin: Option<Addr>,
-    /// Metadata passed while contract instantiation
-    pub label: String,
-    /// Blockchain height in the moment of instantiating the contract
-    pub created: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -973,8 +969,8 @@ where
         code_id: u64,
         creator: Addr,
         admin: impl Into<Option<Addr>>,
-        label: String,
-        created: u64,
+        _label: String,
+        _created: u64,
         salt: impl Into<Option<Binary>>,
     ) -> AnyResult<Addr> {
         // We don't error if the code id doesn't exist, it allows us to instantiate remote contracts
@@ -1009,8 +1005,6 @@ where
             code_id,
             creator,
             admin: admin.into(),
-            label,
-            created,
         };
         self.save_contract(storage, &addr, &info)?;
         Ok(addr)

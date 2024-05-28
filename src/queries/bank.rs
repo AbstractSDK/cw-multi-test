@@ -1,7 +1,5 @@
-use std::str::FromStr;
-
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{Addr, Coin, Uint128};
+use cosmwasm_std::{Addr, Coin};
 
 use crate::wasm_emulation::channel::RemoteChannel;
 
@@ -13,19 +11,8 @@ impl BankRemoteQuerier {
             channel: remote.channel,
             rt_handle: Some(remote.rt.clone()),
         };
-        let distant_amounts: Vec<Coin> = remote
-            .rt
-            .block_on(querier._balance(account, None))
-            .map(|result| {
-                result
-                    .into_iter()
-                    .map(|c| Coin {
-                        amount: Uint128::from_str(&c.amount).unwrap(),
-                        denom: c.denom,
-                    })
-                    .collect()
-            })
-            .unwrap();
+        let distant_amounts: Vec<Coin> =
+            remote.rt.block_on(querier._balance(account, None)).unwrap();
         Ok(distant_amounts)
     }
 }

@@ -21,11 +21,7 @@ impl WasmRemoteQuerier {
         };
 
         let code_info = remote.rt.block_on(wasm_querier._code(code_id))?;
-        let mut res = cosmwasm_std::CodeInfoResponse::default();
-        res.code_id = code_id;
-        res.creator = code_info.creator.to_string();
-        res.checksum = code_info.data_hash.into();
-        Ok(res)
+        Ok(code_info)
     }
 
     pub fn load_distant_contract(remote: RemoteChannel, address: &Addr) -> AnyResult<ContractData> {
@@ -39,16 +35,9 @@ impl WasmRemoteQuerier {
             .block_on(wasm_querier._contract_info(address.clone()))?;
 
         Ok(ContractData {
-            admin: {
-                match code_info.admin.as_str() {
-                    "" => None,
-                    a => Some(Addr::unchecked(a)),
-                }
-            },
+            admin: code_info.admin.map(Addr::unchecked),
             code_id: code_info.code_id,
-            created: code_info.created.unwrap().block_height,
             creator: Addr::unchecked(code_info.creator),
-            label: code_info.label,
         })
     }
 

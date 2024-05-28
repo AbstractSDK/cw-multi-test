@@ -3,7 +3,6 @@ use crate::wasm_emulation::query::gas::{GAS_COST_ALL_BALANCE_QUERY, GAS_COST_BAL
 use crate::wasm_emulation::query::mock_querier::QueryResultWithGas;
 use cosmwasm_std::Addr;
 use cosmwasm_vm::GasInfo;
-use std::str::FromStr;
 
 use cw_utils::NativeBalance;
 
@@ -87,11 +86,9 @@ impl BankQuerier {
                     let query_result = self
                         .remote
                         .rt
-                        .block_on(querier._balance(address, Some(denom.clone())))
-                        .map(|result| Uint128::from_str(&result[0].amount).unwrap());
-
+                        .block_on(querier._balance(address, Some(denom.clone())));
                     if let Ok(distant_amount) = query_result {
-                        amount = Some(distant_amount)
+                        amount = Some(distant_amount[0].amount)
                     }
                 }
 
@@ -113,19 +110,8 @@ impl BankQuerier {
                         channel: self.remote.channel.clone(),
                         rt_handle: Some(self.remote.rt.clone()),
                     };
-                    let query_result: Result<Vec<Coin>, _> = self
-                        .remote
-                        .rt
-                        .block_on(querier._balance(address, None))
-                        .map(|result| {
-                            result
-                                .into_iter()
-                                .map(|c| Coin {
-                                    amount: Uint128::from_str(&c.amount).unwrap(),
-                                    denom: c.denom,
-                                })
-                                .collect()
-                        });
+                    let query_result: Result<Vec<Coin>, _> =
+                        self.remote.rt.block_on(querier._balance(address, None));
                     if let Ok(distant_amount) = query_result {
                         amount = Some(distant_amount)
                     }
