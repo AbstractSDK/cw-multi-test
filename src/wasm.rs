@@ -201,13 +201,13 @@ where
                 );
                 to_json_binary(&res).map_err(Into::into)
             }
-            #[cfg(feature = "cosmwasm_1_2")]
             WasmQuery::CodeInfo { code_id } => {
                 let code_data = self.code_data(code_id)?;
-                let mut res = cosmwasm_std::CodeInfoResponse::default();
-                res.code_id = code_id;
-                res.creator = code_data.creator.to_string();
-                res.checksum = code_data.checksum.clone();
+                let res = cosmwasm_std::CodeInfoResponse::new(
+                    code_id,
+                    code_data.creator,
+                    code_data.checksum,
+                );
                 to_json_binary(&res).map_err(Into::into)
             }
             other => bail!(Error::UnsupportedWasmQuery(other)),

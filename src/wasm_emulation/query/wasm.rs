@@ -214,7 +214,6 @@ impl<
                     GasInfo::with_externally_used(GAS_COST_ALL_QUERIES),
                 )
             }
-            #[cfg(feature = "cosmwasm_1_2")]
             WasmQuery::CodeInfo { code_id } => {
                 let code_data = self
                     .fork_state
@@ -223,11 +222,11 @@ impl<
                     .code_data
                     .get(&(*code_id as usize));
                 let res = if let Some(code_data) = code_data {
-                    let mut res = cosmwasm_std::CodeInfoResponse::default();
-                    res.code_id = *code_id;
-                    res.creator = code_data.creator.to_string();
-                    res.checksum = code_data.checksum.clone();
-                    res
+                    cosmwasm_std::CodeInfoResponse::new(
+                        *code_id,
+                        code_data.creator.clone(),
+                        code_data.checksum.clone(),
+                    )
                 } else {
                     let maybe_code_info =
                         WasmRemoteQuerier::code_info(self.fork_state.remote.clone(), *code_id);

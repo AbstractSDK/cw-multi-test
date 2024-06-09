@@ -241,11 +241,9 @@ impl Module for BankKeeper {
                 let res = BalanceResponse::new(amount);
                 Ok(to_json_binary(&res)?)
             }
-            #[cfg(feature = "cosmwasm_1_1")]
             BankQuery::Supply { denom } => {
                 let amount = self.get_supply(&bank_storage, denom)?;
-                let mut res = SupplyResponse::default();
-                res.amount = amount;
+                let res = SupplyResponse::new(amount);
                 Ok(to_json_binary(&res)?)
             }
             q => bail!("Unsupported bank query: {:?}", q),
