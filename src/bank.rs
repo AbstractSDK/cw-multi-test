@@ -228,7 +228,7 @@ impl Module for BankKeeper {
             BankQuery::AllBalances { address } => {
                 let address = api.addr_validate(&address)?;
                 let amount = self.get_balance(&bank_storage, &address)?;
-                let res = AllBalanceResponse { amount };
+                let res = AllBalanceResponse::new(amount);
                 Ok(to_json_binary(&res)?)
             }
             BankQuery::Balance { address, denom } => {
@@ -238,7 +238,7 @@ impl Module for BankKeeper {
                     .into_iter()
                     .find(|c| c.denom == denom)
                     .unwrap_or_else(|| coin(0, denom));
-                let res = BalanceResponse { amount };
+                let res = BalanceResponse::new(amount);
                 Ok(to_json_binary(&res)?)
             }
             #[cfg(feature = "cosmwasm_1_1")]

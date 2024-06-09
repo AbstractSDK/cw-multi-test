@@ -19,13 +19,13 @@ cosmwasm_1_4 = ["cosmwasm_1_3", "cosmwasm-std/cosmwasm_1_4"]
 [dependencies]
 anyhow = "1.0.75"
 bech32 = "0.9.1"
-cosmwasm-std = { version = "1.5.0", features = [
+cosmwasm-std = { version = "2.0.4", features = [
     "iterator",
     "staking",
     "stargate",
 ] }
-cw-storage-plus = "1.1.0"
-cw-utils = "1.0.3"
+cw-storage-plus = "2.0.0"
+cw-utils = "2.0.0"
 derivative = "2.2.0"
 itertools = "0.12.0"
 prost = "0.12.3"
@@ -36,12 +36,15 @@ thiserror = "1.0.50"
 
 # Clone testing deps
 ## Network
-cw-orch = { version = "0.22.2", features = ["daemon"] }
+# cw-orch = { version = "0.22.2", features = ["daemon"] }
+cw-orch = { git = "https://github.com/abstractsdk/cw-orchestrator", branch = "update/cosmwasm-std-2", features = [
+    "daemon",
+] }
 tokio = "1.28.2"
 tonic = "0.10.2"
 
 ## Emulation
-cosmwasm-vm = { version = "1.2", features = [
+cosmwasm-vm = { version = "2.0.4", features = [
     "staking",
     "stargate",
     "iterator",
@@ -56,7 +59,7 @@ treediff = { version = "4.0.2", features = ["with-rustc-serialize"] }
 rustc-serialize = "0.3.24"
 serde_json = "1.0.105"
 log = "0.4.19"
-wasmer = { version = "=4.2.2", default-features = false, features = [
+wasmer = { version = "4.2.2", default-features = false, features = [
     "cranelift",
     "singlepass",
 ] }
@@ -68,9 +71,9 @@ once_cell = "1.18.0"
 
 # General
 env_logger = "0.10.0"
-cosmwasm-schema = "1.2.7"
+cosmwasm-schema = "2.0.4"
 
 # Cavern Test App
-cw20 = "1.0.1"
+cw20 = "2.0.0"
 moneymarket = { git = "https://github.com/CavernPerson/money-market-contracts" }
-cw2 = "1.1.2"
+cw2 = "2.0.0"

@@ -92,12 +92,10 @@ impl BankQuerier {
                     }
                 }
 
-                let bank_res = BalanceResponse {
-                    amount: Coin {
-                        amount: amount.unwrap(),
-                        denom: denom.to_string(),
-                    },
-                };
+                let bank_res = BalanceResponse::new(Coin {
+                    amount: amount.unwrap(),
+                    denom: denom.to_string(),
+                });
                 to_json_binary(&bank_res).into()
             }
             BankQuery::AllBalances { address } => {
@@ -117,9 +115,7 @@ impl BankQuerier {
                     }
                 }
 
-                let bank_res = AllBalanceResponse {
-                    amount: amount.unwrap(),
-                };
+                let bank_res = AllBalanceResponse::new(amount.unwrap());
                 to_json_binary(&bank_res).into()
             }
             &_ => panic!("Not implemented {:?}", request),

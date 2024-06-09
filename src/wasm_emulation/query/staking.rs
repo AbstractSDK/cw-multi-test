@@ -34,15 +34,11 @@ impl StakingQuerier {
     pub fn query(&self, request: &StakingQuery) -> QueryResultWithGas {
         let contract_result: ContractResult<Binary> = match request {
             StakingQuery::BondedDenom {} => {
-                let res = BondedDenomResponse {
-                    denom: self.denom.clone(),
-                };
+                let res = BondedDenomResponse::new(self.denom.clone());
                 to_json_binary(&res).into()
             }
             StakingQuery::AllValidators {} => {
-                let res = AllValidatorsResponse {
-                    validators: self.validators.clone(),
-                };
+                let res = AllValidatorsResponse::new(self.validators.clone());
                 to_json_binary(&res).into()
             }
             StakingQuery::Validator { address } => {
@@ -51,7 +47,7 @@ impl StakingQuerier {
                     .iter()
                     .find(|validator| validator.address == *address)
                     .cloned();
-                let res = ValidatorResponse { validator };
+                let res = ValidatorResponse::new(validator);
                 to_json_binary(&res).into()
             }
             StakingQuery::AllDelegations { delegator } => {
@@ -62,7 +58,7 @@ impl StakingQuerier {
                     .cloned()
                     .map(|d| d.into())
                     .collect();
-                let res = AllDelegationsResponse { delegations };
+                let res = AllDelegationsResponse::new(delegations);
                 to_json_binary(&res).into()
             }
             StakingQuery::Delegation {
@@ -73,9 +69,7 @@ impl StakingQuerier {
                     .delegations
                     .iter()
                     .find(|d| d.delegator.as_str() == delegator && d.validator == *validator);
-                let res = DelegationResponse {
-                    delegation: delegation.cloned(),
-                };
+                let res = DelegationResponse::new(delegation.cloned());
                 to_json_binary(&res).into()
             }
             &_ => panic!("Not implemented {:?}", request),

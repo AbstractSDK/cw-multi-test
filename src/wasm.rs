@@ -14,13 +14,13 @@ use crate::wasm_emulation::input::QuerierStorage;
 use crate::wasm_emulation::query::mock_querier::{ForkState, LocalForkedState};
 use crate::wasm_emulation::query::AllWasmQuerier;
 use cosmwasm_std::testing::mock_wasmd_attr;
-use cosmwasm_std::CustomMsg;
 use cosmwasm_std::{
     to_json_binary, Addr, Api, Attribute, BankMsg, Binary, BlockInfo, Coin, ContractInfo,
-    ContractInfoResponse, CustomQuery, Deps, DepsMut, Env, Event, HexBinary, MessageInfo, Order,
-    Querier, QuerierWrapper, Record, Reply, ReplyOn, Response, StdResult, Storage, SubMsg,
-    SubMsgResponse, SubMsgResult, TransactionInfo, WasmMsg, WasmQuery,
+    ContractInfoResponse, CustomQuery, Deps, DepsMut, Env, Event, MessageInfo, Order, Querier,
+    QuerierWrapper, Record, Reply, ReplyOn, Response, StdResult, Storage, SubMsg, SubMsgResponse,
+    SubMsgResult, TransactionInfo, WasmMsg, WasmQuery,
 };
+use cosmwasm_std::{Checksum, CustomMsg};
 use cw_storage_plus::Map;
 use prost::Message;
 use schemars::JsonSchema;
@@ -73,7 +73,7 @@ pub struct CodeData {
     /// Address of an account that initially stored the contract code.
     pub creator: Addr,
     /// Checksum of the contract's code base.
-    pub checksum: HexBinary,
+    pub checksum: Checksum,
     /// Identifier of the code base where the contract code is stored in memory.
     pub code_base_id: usize,
 }
@@ -192,10 +192,13 @@ where
             WasmQuery::ContractInfo { contract_addr } => {
                 let addr = api.addr_validate(&contract_addr)?;
                 let contract = self.contract_data(storage, &addr)?;
-                let mut res = ContractInfoResponse::default();
-                res.code_id = contract.code_id;
-                res.creator = contract.creator.to_string();
-                res.admin = contract.admin.map(|x| x.into());
+                let res = ContractInfoResponse::new(
+                    contract.code_id,
+                    contract.creator,
+                    contract.admin,
+                    false,
+                    None,
+                );
                 to_json_binary(&res).map_err(Into::into)
             }
             #[cfg(feature = "cosmwasm_1_2")]
@@ -819,7 +822,11 @@ where
         msg: SubMsg<ExecC>,
     ) -> AnyResult<AppResponse> {
         let SubMsg {
-            msg, id, reply_on, ..
+            msg,
+            id,
+            reply_on,
+            payload,
+            ..
         } = msg;
 
         // execute in cache
@@ -832,9 +839,12 @@ where
             if matches!(reply_on, ReplyOn::Always | ReplyOn::Success) {
                 let reply = Reply {
                     id,
+                    payload,
+                    gas_used: 0,
                     result: SubMsgResult::Ok(SubMsgResponse {
                         events: r.events.clone(),
                         data: r.data,
+                        msg_responses: vec![],
                     }),
                 };
                 // do reply and combine it with the original response
@@ -854,6 +864,8 @@ where
                 let reply = Reply {
                     id,
                     result: SubMsgResult::Err(format!("{:?}", e)),
+                    payload,
+                    gas_used: 0,
                 };
                 self.reply(api, router, storage, block, contract, reply)
             } else {

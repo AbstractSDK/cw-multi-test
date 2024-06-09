@@ -3,11 +3,12 @@ use crate::wasm_emulation::input::ReplyArgs;
 use crate::wasm_emulation::output::StorageChanges;
 use crate::wasm_emulation::query::MockQuerier;
 use crate::wasm_emulation::storage::DualStorage;
+use cosmwasm_std::Checksum;
 use cosmwasm_std::CustomMsg;
 use cosmwasm_std::StdError;
 use cosmwasm_vm::{
     call_execute, call_instantiate, call_migrate, call_query, call_reply, call_sudo, Backend,
-    BackendApi, Checksum, Instance, InstanceOptions, Querier, Size,
+    BackendApi, Instance, InstanceOptions, Querier, Size,
 };
 use cw_orch::daemon::queriers::CosmWasm;
 
@@ -57,7 +58,6 @@ fn apply_storage_changes<ExecC>(storage: &mut dyn Storage, output: &WasmRunnerOu
 /// higher than the limit for a single execution that we have in the production setup.
 const DEFAULT_GAS_LIMIT: u64 = 500_000_000_000_000; // ~0.5s
 const DEFAULT_MEMORY_LIMIT: Option<Size> = Some(Size::mebi(16));
-const DEFAULT_PRINT_DEBUG: bool = true;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DistantContract {
@@ -179,7 +179,6 @@ impl WasmContract {
         };
         let options = InstanceOptions {
             gas_limit: DEFAULT_GAS_LIMIT,
-            print_debug: DEFAULT_PRINT_DEBUG,
         };
         let memory_limit = DEFAULT_MEMORY_LIMIT;
 

@@ -191,12 +191,6 @@ impl<
 
             QueryRequest::Staking(staking_query) => self.staking.query(staking_query),
             QueryRequest::Wasm(msg) => self.wasm.query(self.remote.clone(), msg),
-            QueryRequest::Stargate { .. } => (
-                SystemResult::Err(SystemError::UnsupportedRequest {
-                    kind: "Stargate".to_string(),
-                }),
-                GasInfo::with_externally_used(GAS_COST_QUERY_ERROR),
-            ),
             &_ => panic!("Query Type Not implemented"),
         }
     }

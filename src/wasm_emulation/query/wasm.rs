@@ -72,10 +72,8 @@ impl<
                         );
                     }
                 };
-                let mut response = ContractInfoResponse::default();
-                response.code_id = data.code_id;
-                response.creator = data.creator.to_string();
-                response.admin = data.admin.map(|a| a.to_string());
+                let response =
+                    ContractInfoResponse::new(data.code_id, data.creator, data.admin, false, None);
                 (
                     SystemResult::Ok(to_json_binary(&response).into()),
                     GasInfo::with_externally_used(GAS_COST_CONTRACT_INFO),

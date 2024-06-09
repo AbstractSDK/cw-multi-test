@@ -1,7 +1,6 @@
 //! # Implementation of the interface to custom checksum generator
 
-use cosmwasm_std::{Addr, HexBinary};
-use sha2::{Digest, Sha256};
+use cosmwasm_std::{Addr, Checksum};
 
 /// An interface to call custom checksum generator for contract's code.
 ///
@@ -12,7 +11,7 @@ pub trait ChecksumGenerator {
     /// and code identifier. Returns a hexadecimal binary representation
     /// of the calculated checksum. There are no assumptions about
     /// the length of the calculated checksum.
-    fn checksum(&self, creator: &Addr, code_id: u64) -> HexBinary;
+    fn checksum(&self, creator: &Addr, code_id: u64) -> Checksum;
 }
 
 /// Default checksum generator implementation.
@@ -21,7 +20,7 @@ pub struct SimpleChecksumGenerator;
 impl ChecksumGenerator for SimpleChecksumGenerator {
     /// Calculates the checksum based on code identifier. The resulting
     /// checksum is 32-byte length SHA2 digest.
-    fn checksum(&self, _creator: &Addr, code_id: u64) -> HexBinary {
-        HexBinary::from(Sha256::digest(format!("contract code {}", code_id)).to_vec())
+    fn checksum(&self, _creator: &Addr, code_id: u64) -> Checksum {
+        Checksum::generate(format!("contract code {}", code_id).as_bytes())
     }
 }
