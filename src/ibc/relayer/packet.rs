@@ -1,5 +1,5 @@
 use anyhow::Result as AnyResult;
-use cosmwasm_std::{from_json, Api, Binary, CustomMsg, CustomQuery, Storage};
+use cosmwasm_std::{from_json, Api, Binary, CustomMsg, CustomQuery, IbcPacket, Storage};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
             CHANNEL_CLOSE_INIT_EVENT, SEND_PACKET_EVENT, TIMEOUT_RECEIVE_PACKET_EVENT,
             WRITE_ACK_EVENT,
         },
-        types::{IbcPacketData, MockIbcQuery},
+        types::MockIbcQuery,
         IbcPacketRelayingMsg,
     },
     App, AppResponse, Bank, Distribution, Gov, Ibc, Module, Staking, SudoMsg, Wasm,
@@ -24,14 +24,15 @@ pub struct RelayPacketResult {
 
 #[derive(Debug, Clone)]
 pub enum RelayingResult {
+    /// The relaying has a timeout result
     Timeout {
         timeout_tx: AppResponse,
         close_channel_confirm: Option<AppResponse>,
     },
-    Acknowledgement {
-        tx: AppResponse,
-        ack: Binary,
-    },
+    /// The remote chain has received the packet and the sending chain has received an ack
+    Acknowledgement { tx: AppResponse, ack: Binary },
+    /// The remote chain has received the packet and NO ack was received by the sending chain
+    None,
 }
 
 pub fn relay_packets_in_tx<
@@ -160,7 +161,7 @@ where
     IbcT2: Ibc,
     GovT2: Gov,
 {
-    let packet: IbcPacketData = from_json(app1.ibc_query(MockIbcQuery::SendPacket {
+    let packet: IbcPacket = from_json(app1.ibc_query(MockIbcQuery::SendPacket {
         channel_id: src_channel_id.clone(),
         port_id: src_port_id.clone(),
         sequence,
@@ -197,21 +198,28 @@ where
         });
     }
 
-    // Then we query the packet ack to deliver the response on chain 1
-    let hex_ack = get_event_attr_value(&receive_response, WRITE_ACK_EVENT, "packet_ack_hex")?;
+    // Then we query the packet ack if present to deliver the response on chain 1
 
-    let ack = Binary::from(hex::decode(hex_ack)?);
+    if let Ok(hex_ack) = get_event_attr_value(&receive_response, WRITE_ACK_EVENT, "packet_ack_hex")
+    {
+        let ack = Binary::from(hex::decode(hex_ack)?);
 
-    let ack_response = app1.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::Acknowledge {
-        packet,
-        ack: ack.clone(),
-    }))?;
+        let ack_response = app1.sudo(SudoMsg::Ibc(IbcPacketRelayingMsg::Acknowledge {
+            packet,
+            ack: ack.clone(),
+        }))?;
 
-    Ok(RelayPacketResult {
-        receive_tx: receive_response,
-        result: RelayingResult::Acknowledgement {
-            tx: ack_response,
-            ack,
-        },
-    })
+        Ok(RelayPacketResult {
+            receive_tx: receive_response,
+            result: RelayingResult::Acknowledgement {
+                tx: ack_response,
+                ack,
+            },
+        })
+    } else {
+        Ok(RelayPacketResult {
+            receive_tx: receive_response,
+            result: RelayingResult::None,
+        })
+    }
 }

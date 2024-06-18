@@ -106,13 +106,6 @@ impl FromStr for MockIbcPort {
 }
 
 #[cosmwasm_schema::cw_serde]
-pub struct IbcPacketData {
-    /// This also tells us whether this packet was already sent on the other chain or not
-    pub ack: Option<Binary>,
-    pub original_packet: IbcPacket,
-}
-
-#[cosmwasm_schema::cw_serde]
 pub struct IbcPacketReceived {
     pub data: IbcPacket,
     /// Indicates wether the packet was received with a timeout
@@ -158,14 +151,14 @@ pub enum IbcPacketRelayingMsg {
         timeout: IbcTimeout,
     },
     Receive {
-        packet: IbcPacketData,
+        packet: IbcPacket,
     },
     Acknowledge {
-        packet: IbcPacketData,
+        packet: IbcPacket,
         ack: Binary,
     },
     Timeout {
-        packet: IbcPacketData,
+        packet: IbcPacket,
     },
 }
 
@@ -214,7 +207,7 @@ pub enum MockIbcQuery {
     CosmWasm(IbcQuery),
     /// Only used inside cw-multi-test
     /// Queries a packet that was sent on the chain
-    /// Returns `IbcPacketData`
+    /// Returns `IbcPacket`
     SendPacket {
         channel_id: String,
         port_id: String,

@@ -28,11 +28,12 @@ use super::{
         TIMEOUT_RECEIVE_PACKET_EVENT, WRITE_ACK_EVENT,
     },
     state::{
-        ibc_connections, load_port_info, ACK_PACKET_MAP, CHANNEL_HANDSHAKE_INFO, CHANNEL_INFO,
-        NAMESPACE_IBC, PORT_INFO, RECEIVE_PACKET_MAP, SEND_PACKET_MAP, TIMEOUT_PACKET_MAP,
+        ibc_connections, load_port_info, CHANNEL_HANDSHAKE_INFO, CHANNEL_INFO, NAMESPACE_IBC,
+        PORT_INFO, RECEIVE_ACK_PACKET_MAP, RECEIVE_PACKET_MAP, SEND_ACK_PACKET_MAP,
+        SEND_PACKET_MAP, TIMEOUT_PACKET_MAP,
     },
     types::{
-        ChannelHandshakeInfo, ChannelHandshakeState, ChannelInfo, IbcPacketData, IbcPacketReceived,
+        ChannelHandshakeInfo, ChannelHandshakeState, ChannelInfo, IbcPacketReceived,
         IbcPacketRelayingMsg, IbcResponse, MockIbcPort, MockIbcQuery,
     },
 };
@@ -449,22 +450,20 @@ impl IbcSimpleModule {
 
         let mut channel_info =
             CHANNEL_INFO.load(&ibc_storage, (port_id.clone(), channel_id.clone()))?;
-        let packet = IbcPacketData {
-            ack: None,
-            original_packet: IbcPacket::new(
-                data,
-                IbcEndpoint {
-                    port_id: channel_info.info.endpoint.port_id.to_string(),
-                    channel_id: channel_id.clone(),
-                },
-                IbcEndpoint {
-                    port_id: channel_info.info.counterparty_endpoint.port_id.clone(),
-                    channel_id: channel_info.info.counterparty_endpoint.channel_id.clone(),
-                },
-                channel_info.next_packet_id,
-                timeout,
-            ),
-        };
+        let packet = IbcPacket::new(
+            data,
+            IbcEndpoint {
+                port_id: channel_info.info.endpoint.port_id.to_string(),
+                channel_id: channel_id.clone(),
+            },
+            IbcEndpoint {
+                port_id: channel_info.info.counterparty_endpoint.port_id.clone(),
+                channel_id: channel_info.info.counterparty_endpoint.channel_id.clone(),
+            },
+            channel_info.next_packet_id,
+            timeout,
+        );
+
         // Saving this packet for relaying purposes
         SEND_PACKET_MAP.save(
             &mut ibc_storage,
@@ -481,55 +480,28 @@ impl IbcSimpleModule {
         CHANNEL_INFO.save(&mut ibc_storage, (port_id, channel_id), &channel_info)?;
 
         // We add custom packet sending events
-        let timeout_height = packet
-            .original_packet
-            .timeout
-            .block()
-            .unwrap_or(IbcTimeoutBlock {
-                revision: 0,
-                height: 0,
-            });
-        let timeout_timestamp = packet
-            .original_packet
-            .timeout
-            .timestamp()
-            .map(|t| t.nanos())
-            .unwrap_or(0);
+        let timeout_height = packet.timeout.block().unwrap_or(IbcTimeoutBlock {
+            revision: 0,
+            height: 0,
+        });
+        let timeout_timestamp = packet.timeout.timestamp().map(|t| t.nanos()).unwrap_or(0);
 
         let send_event = Event::new(SEND_PACKET_EVENT)
             .add_attribute(
                 "packet_data",
-                String::from_utf8_lossy(packet.original_packet.data.as_slice()),
+                String::from_utf8_lossy(packet.data.as_slice()),
             )
-            .add_attribute(
-                "packet_data_hex",
-                hex::encode(packet.original_packet.data.as_slice()),
-            )
+            .add_attribute("packet_data_hex", hex::encode(packet.data.as_slice()))
             .add_attribute(
                 "packet_timeout_height",
                 format!("{}-{}", timeout_height.revision, timeout_height.height),
             )
             .add_attribute("packet_timeout_timestamp", timeout_timestamp.to_string())
-            .add_attribute(
-                "packet_sequence",
-                packet.original_packet.sequence.to_string(),
-            )
-            .add_attribute(
-                "packet_src_port",
-                packet.original_packet.src.port_id.clone(),
-            )
-            .add_attribute(
-                "packet_src_channel",
-                packet.original_packet.src.channel_id.clone(),
-            )
-            .add_attribute(
-                "packet_dst_port",
-                packet.original_packet.dest.port_id.clone(),
-            )
-            .add_attribute(
-                "packet_dst_channel",
-                packet.original_packet.dest.channel_id.clone(),
-            )
+            .add_attribute("packet_sequence", packet.sequence.to_string())
+            .add_attribute("packet_src_port", packet.src.port_id.clone())
+            .add_attribute("packet_src_channel", packet.src.channel_id.clone())
+            .add_attribute("packet_dst_port", packet.dest.port_id.clone())
+            .add_attribute("packet_dst_channel", packet.dest.channel_id.clone())
             .add_attribute(
                 "packet_channel_ordering",
                 serde_json::to_value(channel_info.info.order)?.to_string(),
@@ -546,10 +518,7 @@ impl IbcSimpleModule {
         storage: &mut dyn Storage,
         router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
-        IbcPacketData {
-            original_packet: packet,
-            ack: _,
-        }: IbcPacketData,
+        packet: IbcPacket,
     ) -> AnyResult<crate::AppResponse>
     where
         ExecC: CustomMsg,
@@ -691,7 +660,7 @@ impl IbcSimpleModule {
             IbcResponse::Receive(r) => {
                 // We save the acknowledgment in the structure
                 acknowledgement = r.acknowledgement.clone();
-                ACK_PACKET_MAP.save(
+                RECEIVE_ACK_PACKET_MAP.save(
                     &mut ibc_storage,
                     (
                         packet.dest.port_id.clone(),
@@ -733,7 +702,7 @@ impl IbcSimpleModule {
             )
             .add_attribute("packet_connection", channel_info.info.connection_id);
 
-        let ack_event = Event::new(WRITE_ACK_EVENT)
+        let mut ack_event = Event::new(WRITE_ACK_EVENT)
             .add_attribute(
                 "packet_data",
                 serde_json::to_value(&packet.data)?.to_string(),
@@ -748,21 +717,17 @@ impl IbcSimpleModule {
             .add_attribute("packet_src_port", packet.src.port_id)
             .add_attribute("packet_src_channel", packet.src.channel_id)
             .add_attribute("packet_dst_port", packet.dest.port_id)
-            .add_attribute("packet_dst_channel", packet.dest.channel_id)
-            .add_attribute(
-                "packet_ack",
-                acknowledgement
-                    .as_ref()
-                    .map(|a| String::from_utf8_lossy(a.as_slice()).to_string())
-                    .unwrap_or("".to_string()),
-            )
-            .add_attribute(
-                "packet_ack_hex",
-                acknowledgement
-                    .as_ref()
-                    .map(|a| hex::encode(a.as_slice()))
-                    .unwrap_or("".to_string()),
-            );
+            .add_attribute("packet_dst_channel", packet.dest.channel_id);
+
+        // We add the ack events if necessary
+        if let Some(ack) = acknowledgement {
+            ack_event = ack_event
+                .add_attribute(
+                    "packet_ack",
+                    String::from_utf8_lossy(ack.as_slice()).to_string(),
+                )
+                .add_attribute("packet_ack_hex", hex::encode(ack.as_slice()));
+        }
 
         events.push(recv_event);
         events.push(ack_event);
@@ -776,10 +741,7 @@ impl IbcSimpleModule {
         storage: &mut dyn Storage,
         router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
-        IbcPacketData {
-            original_packet: packet,
-            ack: _,
-        }: IbcPacketData,
+        packet: IbcPacket,
         ack: Binary,
     ) -> AnyResult<crate::AppResponse>
     where
@@ -794,8 +756,8 @@ impl IbcSimpleModule {
             (packet.src.port_id.clone(), packet.src.channel_id.clone()),
         )?;
 
-        // First we verify the packet exists and the acknowledgement is not received yet
-        let mut packet_data: IbcPacketData = SEND_PACKET_MAP.load(
+        // First we verify the packet exists
+        SEND_PACKET_MAP.load(
             &ibc_storage,
             (
                 packet.src.port_id.clone(),
@@ -803,10 +765,22 @@ impl IbcSimpleModule {
                 packet.sequence,
             ),
         )?;
-        if packet_data.ack.is_some() {
+
+        let packet_ack = SEND_ACK_PACKET_MAP.may_load(
+            &ibc_storage,
+            (
+                packet.src.port_id.clone(),
+                packet.src.channel_id.clone(),
+                packet.sequence,
+            ),
+        )?;
+
+        // Then that the acknowledgement is not received yet
+        if packet_ack.is_some() {
             bail!("You can't ack the same packet twice on the chain")
         }
 
+        // Finally that the packet has not times-out yet
         if TIMEOUT_PACKET_MAP.has(
             &ibc_storage,
             (
@@ -819,23 +793,20 @@ impl IbcSimpleModule {
         }
 
         // We save the ack into storage
-        packet_data.ack = Some(ack.clone());
-        SEND_PACKET_MAP.save(
+        let acknowledgement = IbcAcknowledgement::new(ack);
+        SEND_ACK_PACKET_MAP.save(
             &mut ibc_storage,
             (
                 packet.src.port_id.clone(),
                 packet.src.channel_id.clone(),
                 packet.sequence,
             ),
-            &packet_data,
+            &acknowledgement,
         )?;
-
-        let acknowledgement = IbcAcknowledgement::new(ack);
-        let original_packet = packet_data.original_packet;
 
         let ack_message = IbcPacketAckMsg::new(
             acknowledgement,
-            original_packet,
+            packet.clone(),
             Addr::unchecked(RELAYER_ADDR),
         );
 
@@ -893,10 +864,7 @@ impl IbcSimpleModule {
         storage: &mut dyn Storage,
         router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
-        IbcPacketData {
-            original_packet: packet,
-            ack: _,
-        }: IbcPacketData,
+        packet: IbcPacket,
     ) -> AnyResult<crate::AppResponse>
     where
         ExecC: CustomMsg,
@@ -910,8 +878,7 @@ impl IbcSimpleModule {
             (packet.src.port_id.clone(), packet.src.channel_id.clone()),
         )?;
 
-        // We verify the timeout is indeed passed on the packet
-        let packet_data: IbcPacketData = SEND_PACKET_MAP.load(
+        let packet_ack = SEND_ACK_PACKET_MAP.may_load(
             &ibc_storage,
             (
                 packet.src.port_id.clone(),
@@ -919,9 +886,8 @@ impl IbcSimpleModule {
                 packet.sequence,
             ),
         )?;
-
-        // If the packet was already aknowledge, no timeout possible
-        if packet_data.ack.is_some() {
+        // If the packet was already acknowledged, no timeout possible
+        if packet_ack.is_some() {
             bail!("You can't timeout an acked packet")
         }
 
@@ -940,7 +906,6 @@ impl IbcSimpleModule {
         }
 
         // We don't check timeout conditions here, because when calling this function, we assume the counterparty chain has received the packet after the timeout
-
         TIMEOUT_PACKET_MAP.save(
             &mut ibc_storage,
             (
@@ -951,7 +916,14 @@ impl IbcSimpleModule {
             &true,
         )?;
 
-        let original_packet = packet_data.original_packet;
+        let original_packet = SEND_PACKET_MAP.load(
+            &ibc_storage,
+            (
+                packet.src.port_id.clone(),
+                packet.src.channel_id.clone(),
+                packet.sequence,
+            ),
+        )?;
 
         let timeout_message =
             IbcPacketTimeoutMsg::new(original_packet, Addr::unchecked(RELAYER_ADDR));

@@ -207,7 +207,6 @@ fn simple_transfer_timeout_closes_channel() -> anyhow::Result<()> {
     // We make sure the response contains a timeout
     assert_eq!(resp.len(), 1);
     match resp[0].result.clone() {
-        RelayingResult::Acknowledgement { .. } => panic!("Expected a timeout"),
         RelayingResult::Timeout {
             close_channel_confirm,
             ..
@@ -215,6 +214,7 @@ fn simple_transfer_timeout_closes_channel() -> anyhow::Result<()> {
             // We make sure the confirm close transaction was executed
             assert!(close_channel_confirm.is_some())
         }
+        _ => panic!("Expected a timeout"),
     }
 
     // We make sure the channel is closed
