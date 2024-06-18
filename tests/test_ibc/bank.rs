@@ -77,37 +77,19 @@ fn simple_transfer() -> anyhow::Result<()> {
     relay_packets_in_tx(&mut app1, &mut app2, send_response)?;
 
     // We make sure the balance of the reciepient has changed
-    let balances = app2
-        .raw_query(
-            to_json_binary(&QueryRequest::<Empty>::Bank(BankQuery::AllBalances {
-                address: fund_recipient.to_string(),
-            }))?
-            .as_slice(),
-        )
-        .into_result()?
-        .unwrap();
-    let balances: AllBalanceResponse = from_json(balances)?;
+    let balances = app2.wrap().query_all_balances(fund_recipient)?;
 
     // The recipient has received exactly what they needs
-    assert_eq!(balances.amount.len(), 1);
-    assert_eq!(balances.amount[0].amount, funds.amount);
+    assert_eq!(balances.len(), 1);
+    assert_eq!(balances[0].amount, funds.amount);
     assert_eq!(
-        balances.amount[0].denom,
+        balances[0].denom,
         format!("ibc/{}/{}", dst_channel, funds.denom)
     );
 
     // We make sure the balance of the sender has changed as well
-    let balances = app1
-        .raw_query(
-            to_json_binary(&QueryRequest::<Empty>::Bank(BankQuery::AllBalances {
-                address: fund_owner.to_string(),
-            }))?
-            .as_slice(),
-        )
-        .into_result()?
-        .unwrap();
-    let balances: AllBalanceResponse = from_json(balances)?;
-    assert!(balances.amount.is_empty());
+    let balances = app1.wrap().query_all_balances(fund_owner)?;
+    assert!(balances.is_empty());
 
     Ok(())
 }

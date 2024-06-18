@@ -32,28 +32,12 @@ use super::{
         NAMESPACE_IBC, PORT_INFO, RECEIVE_PACKET_MAP, SEND_PACKET_MAP, TIMEOUT_PACKET_MAP,
     },
     types::{
-        ChannelHandshakeInfo, ChannelHandshakeState, ChannelInfo, IbcPacketAck, IbcPacketData,
-        IbcPacketReceived, IbcPacketRelayingMsg, IbcResponse, MockIbcPort, MockIbcQuery,
+        ChannelHandshakeInfo, ChannelHandshakeState, ChannelInfo, IbcPacketData, IbcPacketReceived,
+        IbcPacketRelayingMsg, IbcResponse, MockIbcPort, MockIbcQuery,
     },
 };
 
 pub const RELAYER_ADDR: &str = "relayer";
-
-fn packet_from_data_and_channel(packet: &IbcPacketData, channel_info: &ChannelInfo) -> IbcPacket {
-    IbcPacket::new(
-        packet.data.clone(),
-        IbcEndpoint {
-            port_id: packet.src_port_id.clone(),
-            channel_id: packet.src_channel_id.clone(),
-        },
-        IbcEndpoint {
-            port_id: channel_info.info.counterparty_endpoint.port_id.to_string(),
-            channel_id: packet.dst_channel_id.clone(),
-        },
-        packet.sequence,
-        packet.timeout.clone(),
-    )
-}
 
 impl IbcSimpleModule {
     fn create_connection(
@@ -467,13 +451,19 @@ impl IbcSimpleModule {
             CHANNEL_INFO.load(&ibc_storage, (port_id.clone(), channel_id.clone()))?;
         let packet = IbcPacketData {
             ack: None,
-            src_channel_id: channel_id.clone(),
-            src_port_id: channel_info.info.endpoint.port_id.to_string(),
-            dst_channel_id: channel_info.info.counterparty_endpoint.channel_id.clone(),
-            dst_port_id: channel_info.info.counterparty_endpoint.port_id.clone(),
-            sequence: channel_info.next_packet_id,
-            data,
-            timeout,
+            original_packet: IbcPacket::new(
+                data,
+                IbcEndpoint {
+                    port_id: channel_info.info.endpoint.port_id.to_string(),
+                    channel_id: channel_id.clone(),
+                },
+                IbcEndpoint {
+                    port_id: channel_info.info.counterparty_endpoint.port_id.clone(),
+                    channel_id: channel_info.info.counterparty_endpoint.channel_id.clone(),
+                },
+                channel_info.next_packet_id,
+                timeout,
+            ),
         };
         // Saving this packet for relaying purposes
         SEND_PACKET_MAP.save(
@@ -491,28 +481,55 @@ impl IbcSimpleModule {
         CHANNEL_INFO.save(&mut ibc_storage, (port_id, channel_id), &channel_info)?;
 
         // We add custom packet sending events
-        let timeout_height = packet.timeout.block().unwrap_or(IbcTimeoutBlock {
-            revision: 0,
-            height: 0,
-        });
-        let timeout_timestamp = packet.timeout.timestamp().map(|t| t.nanos()).unwrap_or(0);
+        let timeout_height = packet
+            .original_packet
+            .timeout
+            .block()
+            .unwrap_or(IbcTimeoutBlock {
+                revision: 0,
+                height: 0,
+            });
+        let timeout_timestamp = packet
+            .original_packet
+            .timeout
+            .timestamp()
+            .map(|t| t.nanos())
+            .unwrap_or(0);
 
         let send_event = Event::new(SEND_PACKET_EVENT)
             .add_attribute(
                 "packet_data",
-                String::from_utf8_lossy(packet.data.as_slice()),
+                String::from_utf8_lossy(packet.original_packet.data.as_slice()),
             )
-            .add_attribute("packet_data_hex", hex::encode(packet.data.as_slice()))
+            .add_attribute(
+                "packet_data_hex",
+                hex::encode(packet.original_packet.data.as_slice()),
+            )
             .add_attribute(
                 "packet_timeout_height",
                 format!("{}-{}", timeout_height.revision, timeout_height.height),
             )
             .add_attribute("packet_timeout_timestamp", timeout_timestamp.to_string())
-            .add_attribute("packet_sequence", packet.sequence.to_string())
-            .add_attribute("packet_src_port", packet.src_port_id.clone())
-            .add_attribute("packet_src_channel", packet.src_channel_id.clone())
-            .add_attribute("packet_dst_port", packet.dst_port_id.clone())
-            .add_attribute("packet_dst_channel", packet.dst_channel_id.clone())
+            .add_attribute(
+                "packet_sequence",
+                packet.original_packet.sequence.to_string(),
+            )
+            .add_attribute(
+                "packet_src_port",
+                packet.original_packet.src.port_id.clone(),
+            )
+            .add_attribute(
+                "packet_src_channel",
+                packet.original_packet.src.channel_id.clone(),
+            )
+            .add_attribute(
+                "packet_dst_port",
+                packet.original_packet.dest.port_id.clone(),
+            )
+            .add_attribute(
+                "packet_dst_channel",
+                packet.original_packet.dest.channel_id.clone(),
+            )
             .add_attribute(
                 "packet_channel_ordering",
                 serde_json::to_value(channel_info.info.order)?.to_string(),
@@ -529,7 +546,10 @@ impl IbcSimpleModule {
         storage: &mut dyn Storage,
         router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
-        packet: IbcPacketData,
+        IbcPacketData {
+            original_packet: packet,
+            ack: _,
+        }: IbcPacketData,
     ) -> AnyResult<crate::AppResponse>
     where
         ExecC: CustomMsg,
@@ -540,7 +560,7 @@ impl IbcSimpleModule {
         // First we get the channel info to get the port out of it
         let channel_info: ChannelInfo = CHANNEL_INFO.load(
             &ibc_storage,
-            (packet.dst_port_id.clone(), packet.dst_channel_id.clone()),
+            (packet.dest.port_id.clone(), packet.dest.channel_id.clone()),
         )?;
 
         // First we verify it's not already in storage. If its is, we error, not possible to receive the same packet twice
@@ -548,8 +568,8 @@ impl IbcSimpleModule {
             .load(
                 &ibc_storage,
                 (
-                    packet.dst_port_id.clone(),
-                    packet.dst_channel_id.clone(),
+                    packet.dest.port_id.clone(),
+                    packet.dest.channel_id.clone(),
                     packet.sequence,
                 ),
             )
@@ -578,8 +598,8 @@ impl IbcSimpleModule {
         RECEIVE_PACKET_MAP.save(
             &mut ibc_storage,
             (
-                packet.dst_port_id.clone(),
-                packet.dst_channel_id.clone(),
+                packet.dest.port_id.clone(),
+                packet.dest.channel_id.clone(),
                 packet.sequence,
             ),
             &IbcPacketReceived {
@@ -598,8 +618,8 @@ impl IbcSimpleModule {
                         write_cache,
                         block,
                         SudoMsg::Ibc(IbcPacketRelayingMsg::CloseChannel {
-                            port_id: packet.dst_port_id.clone(),
-                            channel_id: packet.dst_channel_id.clone(),
+                            port_id: packet.dest.port_id.clone(),
+                            channel_id: packet.dest.channel_id.clone(),
                             init: true,
                         }),
                     )
@@ -629,10 +649,10 @@ impl IbcSimpleModule {
                 )
                 .add_attribute("packet_timeout_timestamp", timeout_timestamp.to_string())
                 .add_attribute("packet_sequence", packet.sequence.to_string())
-                .add_attribute("packet_src_port", packet.src_port_id.clone())
-                .add_attribute("packet_src_channel", packet.src_channel_id.clone())
-                .add_attribute("packet_dst_port", packet.dst_port_id.clone())
-                .add_attribute("packet_dst_channel", packet.dst_channel_id.clone())
+                .add_attribute("packet_src_port", packet.src.port_id.clone())
+                .add_attribute("packet_src_channel", packet.src.channel_id.clone())
+                .add_attribute("packet_dst_port", packet.dest.port_id.clone())
+                .add_attribute("packet_dst_channel", packet.dest.channel_id.clone())
                 .add_attribute(
                     "packet_channel_ordering",
                     serde_json::to_value(channel_info.info.order)?.to_string(),
@@ -647,9 +667,7 @@ impl IbcSimpleModule {
             });
         }
 
-        let packet_msg = packet_from_data_and_channel(&packet, &channel_info);
-
-        let receive_msg = IbcPacketReceiveMsg::new(packet_msg, Addr::unchecked(RELAYER_ADDR));
+        let receive_msg = IbcPacketReceiveMsg::new(packet.clone(), Addr::unchecked(RELAYER_ADDR));
 
         // First we send an ibc message on the corresponding module
         let port: MockIbcPort = channel_info.info.endpoint.port_id.parse()?;
@@ -676,13 +694,11 @@ impl IbcSimpleModule {
                 ACK_PACKET_MAP.save(
                     &mut ibc_storage,
                     (
-                        packet.dst_port_id.clone(),
-                        packet.dst_channel_id.clone(),
+                        packet.dest.port_id.clone(),
+                        packet.dest.channel_id.clone(),
                         packet.sequence,
                     ),
-                    &IbcPacketAck {
-                        ack: r.acknowledgement,
-                    },
+                    &r.acknowledgement.map(IbcAcknowledgement::new),
                 )?;
                 r.events
             }
@@ -707,10 +723,10 @@ impl IbcSimpleModule {
             )
             .add_attribute("packet_timeout_timestamp", timeout_timestamp.to_string())
             .add_attribute("packet_sequence", packet.sequence.to_string())
-            .add_attribute("packet_src_port", packet.src_port_id.clone())
-            .add_attribute("packet_src_channel", packet.src_channel_id.clone())
-            .add_attribute("packet_dst_port", packet.dst_port_id.clone())
-            .add_attribute("packet_dst_channel", packet.dst_channel_id.clone())
+            .add_attribute("packet_src_port", packet.src.port_id.clone())
+            .add_attribute("packet_src_channel", packet.src.channel_id.clone())
+            .add_attribute("packet_dst_port", packet.dest.port_id.clone())
+            .add_attribute("packet_dst_channel", packet.dest.channel_id.clone())
             .add_attribute(
                 "packet_channel_ordering",
                 serde_json::to_value(channel_info.info.order)?.to_string(),
@@ -729,10 +745,10 @@ impl IbcSimpleModule {
             )
             .add_attribute("packet_timeout_timestamp", timeout_timestamp.to_string())
             .add_attribute("packet_sequence", packet.sequence.to_string())
-            .add_attribute("packet_src_port", packet.src_port_id)
-            .add_attribute("packet_src_channel", packet.src_channel_id)
-            .add_attribute("packet_dst_port", packet.dst_port_id)
-            .add_attribute("packet_dst_channel", packet.dst_channel_id)
+            .add_attribute("packet_src_port", packet.src.port_id)
+            .add_attribute("packet_src_channel", packet.src.channel_id)
+            .add_attribute("packet_dst_port", packet.dest.port_id)
+            .add_attribute("packet_dst_channel", packet.dest.channel_id)
             .add_attribute(
                 "packet_ack",
                 acknowledgement
@@ -760,7 +776,10 @@ impl IbcSimpleModule {
         storage: &mut dyn Storage,
         router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
-        packet: IbcPacketData,
+        IbcPacketData {
+            original_packet: packet,
+            ack: _,
+        }: IbcPacketData,
         ack: Binary,
     ) -> AnyResult<crate::AppResponse>
     where
@@ -772,15 +791,15 @@ impl IbcSimpleModule {
         // First we get the channel info to get the port out of it
         let channel_info = CHANNEL_INFO.load(
             &ibc_storage,
-            (packet.src_port_id.clone(), packet.src_channel_id.clone()),
+            (packet.src.port_id.clone(), packet.src.channel_id.clone()),
         )?;
 
         // First we verify the packet exists and the acknowledgement is not received yet
         let mut packet_data: IbcPacketData = SEND_PACKET_MAP.load(
             &ibc_storage,
             (
-                packet.src_port_id.clone(),
-                packet.src_channel_id.clone(),
+                packet.src.port_id.clone(),
+                packet.src.channel_id.clone(),
                 packet.sequence,
             ),
         )?;
@@ -791,8 +810,8 @@ impl IbcSimpleModule {
         if TIMEOUT_PACKET_MAP.has(
             &ibc_storage,
             (
-                packet.src_port_id.clone(),
-                packet.src_channel_id.clone(),
+                packet.src.port_id.clone(),
+                packet.src.channel_id.clone(),
                 packet.sequence,
             ),
         ) {
@@ -804,15 +823,15 @@ impl IbcSimpleModule {
         SEND_PACKET_MAP.save(
             &mut ibc_storage,
             (
-                packet.src_port_id.clone(),
-                packet.src_channel_id.clone(),
+                packet.src.port_id.clone(),
+                packet.src.channel_id.clone(),
                 packet.sequence,
             ),
             &packet_data,
         )?;
 
         let acknowledgement = IbcAcknowledgement::new(ack);
-        let original_packet = packet_from_data_and_channel(&packet_data, &channel_info);
+        let original_packet = packet_data.original_packet;
 
         let ack_message = IbcPacketAckMsg::new(
             acknowledgement,
@@ -853,10 +872,10 @@ impl IbcSimpleModule {
             )
             .add_attribute("packet_timeout_timestamp", timeout_timestamp.to_string())
             .add_attribute("packet_sequence", packet.sequence.to_string())
-            .add_attribute("packet_src_port", packet.src_port_id.clone())
-            .add_attribute("packet_src_channel", packet.src_channel_id.clone())
-            .add_attribute("packet_dst_port", packet.dst_port_id.clone())
-            .add_attribute("packet_dst_channel", packet.dst_channel_id)
+            .add_attribute("packet_src_port", packet.src.port_id.clone())
+            .add_attribute("packet_src_channel", packet.src.channel_id.clone())
+            .add_attribute("packet_dst_port", packet.dest.port_id.clone())
+            .add_attribute("packet_dst_channel", packet.dest.channel_id)
             .add_attribute(
                 "packet_channel_ordering",
                 serde_json::to_value(channel_info.info.order)?.to_string(),
@@ -874,7 +893,10 @@ impl IbcSimpleModule {
         storage: &mut dyn Storage,
         router: &dyn crate::CosmosRouter<ExecC = ExecC, QueryC = QueryC>,
         block: &cosmwasm_std::BlockInfo,
-        packet: IbcPacketData,
+        IbcPacketData {
+            original_packet: packet,
+            ack: _,
+        }: IbcPacketData,
     ) -> AnyResult<crate::AppResponse>
     where
         ExecC: CustomMsg,
@@ -885,15 +907,15 @@ impl IbcSimpleModule {
         // First we get the channel info to get the port out of it
         let channel_info = CHANNEL_INFO.load(
             &ibc_storage,
-            (packet.src_port_id.clone(), packet.src_channel_id.clone()),
+            (packet.src.port_id.clone(), packet.src.channel_id.clone()),
         )?;
 
         // We verify the timeout is indeed passed on the packet
         let packet_data: IbcPacketData = SEND_PACKET_MAP.load(
             &ibc_storage,
             (
-                packet.src_port_id.clone(),
-                packet.src_channel_id.clone(),
+                packet.src.port_id.clone(),
+                packet.src.channel_id.clone(),
                 packet.sequence,
             ),
         )?;
@@ -907,8 +929,8 @@ impl IbcSimpleModule {
             .may_load(
                 &ibc_storage,
                 (
-                    packet.src_port_id.clone(),
-                    packet.src_channel_id.clone(),
+                    packet.src.port_id.clone(),
+                    packet.src.channel_id.clone(),
                     packet.sequence,
                 ),
             )?
@@ -922,14 +944,14 @@ impl IbcSimpleModule {
         TIMEOUT_PACKET_MAP.save(
             &mut ibc_storage,
             (
-                packet.src_port_id.clone(),
-                packet.src_channel_id.clone(),
+                packet.src.port_id.clone(),
+                packet.src.channel_id.clone(),
                 packet.sequence,
             ),
             &true,
         )?;
 
-        let original_packet = packet_from_data_and_channel(&packet_data, &channel_info);
+        let original_packet = packet_data.original_packet;
 
         let timeout_message =
             IbcPacketTimeoutMsg::new(original_packet, Addr::unchecked(RELAYER_ADDR));
@@ -969,10 +991,10 @@ impl IbcSimpleModule {
             )
             .add_attribute("packet_timeout_timestamp", timeout_timestamp.to_string())
             .add_attribute("packet_sequence", packet.sequence.to_string())
-            .add_attribute("packet_src_port", packet.src_port_id.clone())
-            .add_attribute("packet_src_channel", packet.src_channel_id.clone())
-            .add_attribute("packet_dst_port", packet.dst_port_id.clone())
-            .add_attribute("packet_dst_channel", packet.dst_channel_id)
+            .add_attribute("packet_src_port", packet.src.port_id.clone())
+            .add_attribute("packet_src_channel", packet.src.channel_id.clone())
+            .add_attribute("packet_dst_port", packet.dest.port_id.clone())
+            .add_attribute("packet_dst_channel", packet.dest.channel_id)
             .add_attribute(
                 "packet_channel_ordering",
                 serde_json::to_value(channel_info.info.order)?.to_string(),

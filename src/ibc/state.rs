@@ -1,4 +1,4 @@
-use cosmwasm_std::Storage;
+use cosmwasm_std::{IbcAcknowledgement, Storage};
 use cw_storage_plus::{Index, IndexList, IndexedMap, Map, MultiIndex};
 
 use super::types::*;
@@ -45,7 +45,8 @@ pub const RECEIVE_PACKET_MAP: Map<(String, String, u64), IbcPacketReceived> =
     Map::new("receive_packet");
 
 // channel id, packet_id ==> Packet data
-pub const ACK_PACKET_MAP: Map<(String, String, u64), IbcPacketAck> = Map::new("ack_packet");
+pub const ACK_PACKET_MAP: Map<(String, String, u64), Option<IbcAcknowledgement>> =
+    Map::new("ack_packet");
 
 // channel id, packet_id ==> Packet data
 pub const TIMEOUT_PACKET_MAP: Map<(String, String, u64), bool> = Map::new("timeout_packet");

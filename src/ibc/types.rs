@@ -1,7 +1,7 @@
 use anyhow::bail;
 use cosmwasm_std::{
-    Addr, Binary, Event, IbcChannel, IbcChannelOpenResponse, IbcEndpoint, IbcOrder, IbcQuery,
-    IbcTimeout,
+    Addr, Binary, Event, IbcChannel, IbcChannelOpenResponse, IbcEndpoint, IbcOrder, IbcPacket,
+    IbcQuery, IbcTimeout,
 };
 use std::{fmt::Display, str::FromStr};
 
@@ -54,6 +54,7 @@ pub struct ChannelInfo {
 }
 
 #[cosmwasm_schema::cw_serde]
+#[non_exhaustive]
 pub enum MockIbcPort {
     Wasm(String), // A wasm port is simply a wasm contract address
     Bank,         // The bank port simply talks to the bank module
@@ -106,27 +107,16 @@ impl FromStr for MockIbcPort {
 
 #[cosmwasm_schema::cw_serde]
 pub struct IbcPacketData {
-    pub ack: Option<Binary>,
     /// This also tells us whether this packet was already sent on the other chain or not
-    pub src_port_id: String,
-    pub src_channel_id: String,
-    pub dst_port_id: String,
-    pub dst_channel_id: String,
-    pub sequence: u64,
-    pub data: Binary,
-    pub timeout: IbcTimeout,
+    pub ack: Option<Binary>,
+    pub original_packet: IbcPacket,
 }
 
 #[cosmwasm_schema::cw_serde]
 pub struct IbcPacketReceived {
-    pub data: IbcPacketData,
+    pub data: IbcPacket,
     /// Indicates wether the packet was received with a timeout
     pub timeout: bool,
-}
-
-#[cosmwasm_schema::cw_serde]
-pub struct IbcPacketAck {
-    pub ack: Option<Binary>,
 }
 
 /// This is a custom msg that is used for executing actions on the IBC module
