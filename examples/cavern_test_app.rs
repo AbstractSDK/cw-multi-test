@@ -1,18 +1,16 @@
-use anyhow::Result as AnyResult;
-use clone_cw_multi_test::{addons::{MockAddressGenerator, MockApiBech32}, wasm_emulation::{
+use clone_cw_multi_test::{
+    addons::{MockAddressGenerator, MockApiBech32},
+    wasm_emulation::{
         channel::RemoteChannel, contract::WasmContract, storage::analyzer::StorageAnalyzer,
-    }, AppBuilder, BankKeeper, Executor, WasmKeeper};
+    },
+    AppBuilder, BankKeeper, Executor, WasmKeeper,
+};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{coins, Addr, BlockInfo, ContractInfoResponse, QueryRequest, WasmQuery};
 use cw20::BalanceResponse;
-use cw_orch::{
-    daemon::{networks::PHOENIX_1, queriers::Node, GrpcChannel},
-    environment::ChainInfoOwned,
-};
+use cw_orch::daemon::{networks::PHOENIX_1, queriers::Node};
 use std::path::Path;
-use tokio::runtime::Handle;
 use tokio::runtime::Runtime;
-use tonic::transport::Channel;
 
 use cw20::Cw20QueryMsg;
 
@@ -50,12 +48,6 @@ pub struct InstantiateMsg {
 
 /// END CONTRACT MSGs
 
-fn get_channel(chain: impl Into<ChainInfoOwned>, rt: Handle) -> AnyResult<Channel> {
-    let chain = chain.into();
-    let channel = rt.block_on(GrpcChannel::connect(&chain.grpc_urls, &chain.chain_id))?;
-    Ok(channel)
-}
-
 pub fn test() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -68,7 +60,7 @@ pub fn test() -> anyhow::Result<()> {
     let chain = PHOENIX_1;
     let remote_channel = RemoteChannel::new(
         &runtime,
-        get_channel(chain.clone(), runtime.handle().clone())?,
+        chain.clone(),
         chain.network_info.pub_address_prefix,
     )?;
 

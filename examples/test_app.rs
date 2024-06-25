@@ -1,5 +1,6 @@
-use anyhow::Result as AnyResult;
-use clone_cw_multi_test::{wasm_emulation::channel::RemoteChannel, AppBuilder, BankKeeper, Executor, WasmKeeper};
+use clone_cw_multi_test::{
+    wasm_emulation::channel::RemoteChannel, AppBuilder, BankKeeper, Executor, WasmKeeper,
+};
 use cosmwasm_std::Addr;
 use cw20::AllAccountsResponse;
 use cw20::Cw20ExecuteMsg;
@@ -8,19 +9,10 @@ use cw20::Cw20QueryMsg;
 use cw_orch::daemon::networks::PHOENIX_1;
 
 use cosmwasm_std::Empty;
-use cw_orch::daemon::GrpcChannel;
-use cw_orch::environment::ChainInfoOwned;
-use tokio::runtime::Handle;
 use tokio::runtime::Runtime;
-use tonic::transport::Channel;
 
 pub fn main() {
     test().unwrap()
-}
-fn get_channel(chain: impl Into<ChainInfoOwned>, rt: Handle) -> AnyResult<Channel> {
-    let chain = chain.into();
-    let channel = rt.block_on(GrpcChannel::connect(&chain.grpc_urls, &chain.chain_id))?;
-    Ok(channel)
 }
 
 pub fn test() -> anyhow::Result<()> {
@@ -30,7 +22,7 @@ pub fn test() -> anyhow::Result<()> {
     let chain = PHOENIX_1;
     let remote_channel = RemoteChannel::new(
         &runtime,
-        get_channel(chain.clone(), runtime.handle().clone())?,
+        chain.clone(),
         chain.network_info.pub_address_prefix,
     )?;
     let wasm = WasmKeeper::<Empty, Empty>::new().with_remote(remote_channel.clone());
